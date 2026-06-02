@@ -395,66 +395,6 @@ export interface CustomTemplateMeta {
   uploadedAt?: string;
 }
 
-export function getCustomTemplateMeta(): CustomTemplateMeta {
-  const customDocxPath = path.resolve(process.cwd(), "CUSTOM_TEMPLATE.docx");
-  const metaPath = path.resolve(process.cwd(), "CUSTOM_TEMPLATE_meta.json");
-
-  if (!fs.existsSync(customDocxPath)) {
-    return { hasCustom: false };
-  }
-
-  try {
-    if (fs.existsSync(metaPath)) {
-      const data = fs.readFileSync(metaPath, "utf-8");
-      return { hasCustom: true, ...JSON.parse(data) };
-    }
-  } catch (e) {
-    console.warn("Error parsing template meta file:", e);
-  }
-
-  // Fallback if file exists but no meta file is found
-  const stats = fs.statSync(customDocxPath);
-  return {
-    hasCustom: true,
-    fileName: "plantilla_personalizada.docx",
-    fileSize: stats.size,
-    uploadedAt: stats.mtime.toISOString()
-  };
-}
-
-export function saveCustomTemplate(fileBase64: string, fileName: string): CustomTemplateMeta {
-  const customDocxPath = path.resolve(process.cwd(), "CUSTOM_TEMPLATE.docx");
-  const metaPath = path.resolve(process.cwd(), "CUSTOM_TEMPLATE_meta.json");
-
-  const buffer = Buffer.from(fileBase64, "base64");
-  fs.writeFileSync(customDocxPath, buffer);
-
-  const metaData = {
-    fileName,
-    fileSize: buffer.length,
-    uploadedAt: new Date().toISOString()
-  };
-
-  fs.writeFileSync(metaPath, JSON.stringify(metaData, null, 2), "utf-8");
-  return { hasCustom: true, ...metaData };
-}
-
-export function resetCustomTemplate(): void {
-  const customDocxPath = path.resolve(process.cwd(), "CUSTOM_TEMPLATE.docx");
-  const metaPath = path.resolve(process.cwd(), "CUSTOM_TEMPLATE_meta.json");
-
-  try {
-    if (fs.existsSync(customDocxPath)) {
-      fs.unlinkSync(customDocxPath);
-    }
-    if (fs.existsSync(metaPath)) {
-      fs.unlinkSync(metaPath);
-    }
-  } catch (e) {
-    console.error("Error resetting custom template files:", e);
-  }
-}
-
 export function autoTagDocumentXml(documentXml: string): string {
   console.log("[Auto Tag Engine] Starting intelligent OpenXML tagging...");
 
@@ -538,7 +478,7 @@ export function autoTagDocumentXml(documentXml: string): string {
   const injectTagIntoCell = (cellXml: string, tag: string): string => {
     if (cellXml.includes("<w:t")) {
       let replaced = false;
-      const withReplacedWt = cellXml.replace(/<w:t([^>]*)>([\s\S]*?)<\/w:t>/, (match, attrs, content) => {
+      const withReplacedWt = cellXml.replace(/<w:t([^>]*)>([\s\S]*?)<\/w:t>/, (match, attrs, p1) => {
         replaced = true;
         return `<w:t${attrs}>${tag}</w:t>`;
       });
@@ -692,18 +632,21 @@ export function autoTagDocumentXml(documentXml: string): string {
   return documentXml;
 }
 
-export function compileDocxWithPayload(payload: RenderingPayload): Buffer {
+export function compileDocxWithPayload(payload: RenderingPayload, templateBase64?: string): Buffer {
   // Safe validation
   ensureTemplateExists();
 
-  const customDocxPath = path.resolve(process.cwd(), "CUSTOM_TEMPLATE.docx");
-  const defaultDocxPath = path.resolve(process.cwd(), "CNT FORMATO PLANEACION.docx");
-  
-  const templatePath = fs.existsSync(customDocxPath) ? customDocxPath : defaultDocxPath;
-  console.log(`[Template Engine] Compiling docx with template chosen: ${templatePath}`);
+  let zip: PizZip;
 
-  const templateBinary = fs.readFileSync(templatePath, "binary");
-  const zip = new PizZip(templateBinary);
+  if (templateBase64) {
+    console.log("[Template Engine] Utilizing base64 template uploaded by client.");
+    zip = new PizZip(Buffer.from(templateBase64, "base64").toString("binary"));
+  } else {
+    const defaultDocxPath = path.resolve(process.cwd(), "CNT FORMATO PLANEACION.docx");
+    console.log(`[Template Engine] Compiling docx with default template: ${defaultDocxPath}`);
+    const templateBinary = fs.readFileSync(defaultDocxPath, "binary");
+    zip = new PizZip(templateBinary);
+  }
 
   // Auto-tag document XML, headers and footers to support raw, untagged institution word files!
   try {

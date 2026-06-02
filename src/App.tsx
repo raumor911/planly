@@ -152,6 +152,7 @@ export default function App() {
   });
 
   // Template custom manager states
+  const [templateBase64, setTemplateBase64] = useState<string>("");
   const [templateMeta, setTemplateMeta] = useState<{
     hasCustom: boolean;
     fileName?: string;
@@ -337,7 +338,7 @@ export default function App() {
     reader.readAsDataURL(file);
   };
 
-  const handleTemplateUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleTemplateUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -352,30 +353,19 @@ export default function App() {
     setTemplateMsg("");
 
     const reader = new FileReader();
-    reader.onload = async () => {
+    reader.onload = () => {
       try {
         const base64String = (reader.result as string).split(",")[1];
-        const response = await fetch("/api/template/upload", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            fileBase64: base64String,
-            fileName: file.name
-          })
+        setTemplateBase64(base64String);
+        setTemplateMeta({
+          hasCustom: true,
+          fileName: file.name,
+          fileSize: file.size,
+          uploadedAt: new Date().toISOString()
         });
-
-        if (!response.ok) {
-          const errData = await response.json();
-          throw new Error(errData.error || "No se pudo cargar la plantilla.");
-        }
-
-        const data = await response.json();
-        setTemplateMeta(data.meta || { hasCustom: true, fileName: file.name });
-        setTemplateMsg("¡Plantilla personalizada guardada con éxito! Se respetará este formato para todas las descargas.");
+        setTemplateMsg("¡Plantilla personalizada cargada con éxito en memoria! Se respetará este formato para todas las descargas.");
       } catch (err: any) {
-        setTemplateError(err.message || "Error al subir la plantilla.");
+        setTemplateError(err.message || "Error al procesar la plantilla.");
       } finally {
         setUploadingTemplate(false);
       }
@@ -389,22 +379,11 @@ export default function App() {
     reader.readAsDataURL(file);
   };
 
-  const handleResetTemplate = async () => {
-    try {
-      setUploadingTemplate(true);
-      const response = await fetch("/api/template/reset", { method: "POST" });
-      if (response.ok) {
-        setTemplateMeta({ hasCustom: false });
-        setTemplateMsg("Se ha restablecido el formato estándar por defecto.");
-        setTemplateError("");
-      } else {
-        throw new Error("No se pudo restablecer la plantilla.");
-      }
-    } catch (err: any) {
-      setTemplateError(err.message);
-    } finally {
-      setUploadingTemplate(false);
-    }
+  const handleResetTemplate = () => {
+    setTemplateBase64("");
+    setTemplateMeta({ hasCustom: false });
+    setTemplateMsg("Se ha restablecido el formato estándar por defecto.");
+    setTemplateError("");
   };
 
   const loadDemoAndStart = () => {
@@ -512,7 +491,8 @@ export default function App() {
           mecanismo,
           tipografia,
           sesionesOverride: generatedSessions, // Handover of custom edited table rows
-          materiaOverride: materiaName
+          materiaOverride: materiaName,
+          templateBase64: templateBase64 || undefined
         }),
       });
 

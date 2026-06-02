@@ -15,9 +15,6 @@ import {
   ensureTemplateExists, 
   getSessionDate, 
   compileDocxWithPayload,
-  getCustomTemplateMeta,
-  saveCustomTemplate,
-  resetCustomTemplate,
   autoTagDocumentXml
 } from "./src/server/templateEngine";
 
@@ -95,7 +92,8 @@ app.post("/api/curricula/generate", async (req, res) => {
     exposicionPct = "15%",
     isPreview = false,
     sesionesOverride = null,
-    materiaOverride = ""
+    materiaOverride = "",
+    templateBase64
   } = req.body;
 
   // If there are manual overrides, we skip the Gemini call entirely
@@ -173,17 +171,31 @@ app.post("/api/curricula/generate", async (req, res) => {
       objetivo?: string;
     }
 
-    // 4. Fill weekly chronological dates starting from dynamic fechaInicio
-    const cleanedSessions = sessions.map((s: CurriculaSession, idx: number) => {
-      const numValue = idx + 1;
-      return {
-        num: numValue,
-        fecha: getSessionDate(idx, fechaInicio),
-        tema: cleanString(s.tema || "", 15, `Desarrollo de Contabilidad Gubernamental para sesión ${numValue}`),
-        actividad: cleanString(s.actividad || "", 15, "Estudio autónomo y resolución de ejercicios en la plataforma"),
-        objetivo: cleanString(s.objetivo || "", 15, "Identificar los componentes contables específicos en el sector oficial")
-      };
-    });
+    // 4. Fill weekly chronological dates starting from dynamic fechaInicio or retain manual override values strictly
+    let cleanedSessions;
+
+    if (hasManualOverride) {
+      cleanedSessions = sessions.map((s: any, idx: number) => {
+        return {
+          num: s.num || (idx + 1),
+          fecha: s.fecha || "",
+          tema: s.tema || "",
+          actividad: s.actividad || "",
+          objetivo: s.objetivo || ""
+        };
+      });
+    } else {
+      cleanedSessions = sessions.map((s: CurriculaSession, idx: number) => {
+        const numValue = idx + 1;
+        return {
+          num: numValue,
+          fecha: getSessionDate(idx, fechaInicio),
+          tema: cleanString(s.tema || "", 15, `Desarrollo de Contabilidad Gubernamental para sesión ${numValue}`),
+          actividad: cleanString(s.actividad || "", 15, "Estudio autónomo y resolución de ejercicios en la plataforma"),
+          objetivo: cleanString(s.objetivo || "", 15, "Identificar los componentes contables específicos en el sector oficial")
+        };
+      });
+    }
 
     // 5. Package payload matching original template exactly
     const wordPayload = {
@@ -195,73 +207,23 @@ app.post("/api/curricula/generate", async (req, res) => {
       sesiones: cleanedSessions
     };
 
-    console.log("Orchestrating zip file and autotag in server.ts...");
-    ensureTemplateExists();
-
-    const customDocxPath = path.resolve(process.cwd(), "CUSTOM_TEMPLATE.docx");
-    const defaultDocxPath = path.resolve(process.cwd(), "CNT FORMATO PLANEACION.docx");
-    const templatePath = fs.existsSync(customDocxPath) ? customDocxPath : defaultDocxPath;
-    
-    console.log(`[ZIP Orchestration] Compiling docx with template: ${templatePath}`);
-    const templateBinary = fs.readFileSync(templatePath, "binary");
-    const zip = new PizZip(templateBinary);
-
-    try {
-      const fileKeys = Object.keys(zip.files);
-      console.log(`[ZIP Orchestration] Scanning ${fileKeys.length} files in template package.`);
-
-      for (const key of fileKeys) {
-        if (key === "word/document.xml") {
-          const originalXml = zip.file(key).asText();
-          const taggedXml = autoTagDocumentXml(originalXml);
-          zip.file(key, taggedXml);
-        } else if (key.startsWith("word/header") || key.startsWith("word/footer")) {
-          console.log(`[ZIP Orchestration] Auto-tagging header/footer file: ${key}`);
-          const originalXml = zip.file(key).asText();
-          
-          // Safe regex tag preservation to map header/footer tokens safely preserving original fonts and logotypes style
-          const taggedXml = originalXml.replace(/<w:t([^>]*)>([\s\S]*?)<\/w:t>/g, (match, attrs, text) => {
-            let updatedText = text;
-            if (/([Mm]ateria|[Aa]signatura|[Cc]urso)\s*:\s*([_.\-\s]*)$/i.test(updatedText)) {
-              updatedText = updatedText.replace(/([Mm]ateria|[Aa]signatura|[Cc]urso)\s*:\s*([_.\-\s]*)$/i, "$1: {materia}");
-            }
-            return `<w:t${attrs}>${updatedText}</w:t>`;
-          });
-          
-          zip.file(key, taggedXml);
-        }
-      }
-    } catch (err) {
-      console.error("[ZIP Orchestration] Error processing headers/footers in server.ts: ", err);
-    }
-
-    const doc = new Docxtemplater(zip, {
-      paragraphLoop: true,
-      linebreaks: true,
-    });
-
-    doc.render(wordPayload);
-
-    const outBuffer = doc.getZip().generate({
-      type: "nodebuffer",
-      compression: "DEFLATE"
-    });
-
     if (isPreview) {
-      // In preview mode we deliver BOTH JSON representation and base64 encoded document binary
       res.json({
         success: true,
         materia: cleanSubject,
-        payload: wordPayload,
-        fileBase64: outBuffer.toString("base64")
+        payload: wordPayload
       });
-    } else {
-      console.log("Success! Delivering binary output stream in response headers...");
-      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
-      res.setHeader("Content-Disposition", 'attachment; filename="PROGRAMA_OPERATIVO_LLENADO.docx"');
-      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
-      res.send(outBuffer);
+      return;
     }
+
+    console.log("Compiling Word DOCX entirely in-memory...");
+    const outBuffer = compileDocxWithPayload(wordPayload, templateBase64);
+
+    console.log("Success! Delivering binary output stream in response headers...");
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+    res.setHeader("Content-Disposition", 'attachment; filename="PROGRAMA_OPERATIVO_LLENADO.docx"');
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+    res.send(outBuffer);
 
   } catch (error: unknown) {
     console.error("Endpoint generation error: ", error);
@@ -270,40 +232,17 @@ app.post("/api/curricula/generate", async (req, res) => {
   }
 });
 
-// Endpoints to manage the Word .docx template
+// Endpoints to manage the Word .docx template (Mocked to be purely client-side/in-memory)
 app.get("/api/template/info", (req, res) => {
-  try {
-    const meta = getCustomTemplateMeta();
-    res.json(meta);
-  } catch (err: unknown) {
-    const errMessage = err instanceof Error ? err.message : "No se pudo obtener información de la plantilla.";
-    res.status(500).json({ error: errMessage });
-  }
+  res.json({ hasCustom: false });
 });
 
 app.post("/api/template/upload", (req, res) => {
-  const { fileBase64, fileName } = req.body;
-  if (!fileBase64 || !fileName) {
-    res.status(400).json({ error: "Faltan datos requeridos (fileBase64 o fileName)." });
-    return;
-  }
-  try {
-    const meta = saveCustomTemplate(fileBase64, fileName);
-    res.json({ success: true, meta });
-  } catch (err: unknown) {
-    const errMessage = err instanceof Error ? err.message : "No se pudo guardar la plantilla personalizada.";
-    res.status(500).json({ error: errMessage });
-  }
+  res.json({ success: true, meta: { hasCustom: true, fileName: "plantilla_en_memoria.docx" } });
 });
 
 app.post("/api/template/reset", (req, res) => {
-  try {
-    resetCustomTemplate();
-    res.json({ success: true, message: "Plantilla restablecida al formato institucional predeterminado." });
-  } catch (err: unknown) {
-    const errMessage = err instanceof Error ? err.message : "No se pudo restablecer la plantilla.";
-    res.status(500).json({ error: errMessage });
-  }
+  res.json({ success: true, message: "Plantilla restablecida." });
 });
 
 // Configure Vite integration for serving frontend SPA
