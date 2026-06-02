@@ -1,5 +1,9 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
+import PizZip from "pizzip";
+// @ts-ignore
+import Docxtemplater from "docxtemplater";
 import { createServer as createViteServer } from "vite";
 import mammoth from "mammoth";
 import { 
@@ -13,7 +17,8 @@ import {
   compileDocxWithPayload,
   getCustomTemplateMeta,
   saveCustomTemplate,
-  resetCustomTemplate
+  resetCustomTemplate,
+  autoTagDocumentXml
 } from "./src/server/templateEngine";
 
 const app = express();
@@ -71,9 +76,10 @@ app.post("/api/curricula/extract-text", async (req, res) => {
       extractedText: resultText
     });
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error during document parsing/extraction: ", error);
-    res.status(500).json({ error: error?.message || "Ocurrió un error inesperado al procesar el archivo." });
+    const errMessage = error instanceof Error ? error.message : "Ocurrió un error inesperado al procesar el archivo.";
+    res.status(500).json({ error: errMessage });
   }
 });
 
@@ -154,22 +160,28 @@ app.post("/api/curricula/generate", async (req, res) => {
     };
 
     // Helper to format percentage strings nicely
-    const formatPercent = (val: any, fallback: string): string => {
+    const formatPercent = (val: string | number | null | undefined, fallback: string): string => {
       if (val === undefined || val === null) return fallback;
       const s = String(val).trim();
       if (!s) return fallback;
       return s.endsWith("%") ? s : `${s}%`;
     };
 
+    interface CurriculaSession {
+      tema?: string;
+      actividad?: string;
+      objetivo?: string;
+    }
+
     // 4. Fill weekly chronological dates starting from dynamic fechaInicio
-    const cleanedSessions = sessions.map((s: any, idx: number) => {
+    const cleanedSessions = sessions.map((s: CurriculaSession, idx: number) => {
       const numValue = idx + 1;
       return {
         num: numValue,
         fecha: getSessionDate(idx, fechaInicio),
-        tema: cleanString(s.tema, 15, `Desarrollo de Contabilidad Gubernamental para sesión ${numValue}`),
-        actividad: cleanString(s.actividad, 15, "Estudio autónomo y resolución de ejercicios en la plataforma"),
-        objetivo: cleanString(s.objetivo, 15, "Identificar los componentes contables específicos en el sector oficial")
+        tema: cleanString(s.tema || "", 15, `Desarrollo de Contabilidad Gubernamental para sesión ${numValue}`),
+        actividad: cleanString(s.actividad || "", 15, "Estudio autónomo y resolución de ejercicios en la plataforma"),
+        objetivo: cleanString(s.objetivo || "", 15, "Identificar los componentes contables específicos en el sector oficial")
       };
     });
 
@@ -183,8 +195,57 @@ app.post("/api/curricula/generate", async (req, res) => {
       sesiones: cleanedSessions
     };
 
-    console.log("Compiling new docx output with OpenXML template engine...");
-    const outBuffer = compileDocxWithPayload(wordPayload);
+    console.log("Orchestrating zip file and autotag in server.ts...");
+    ensureTemplateExists();
+
+    const customDocxPath = path.resolve(process.cwd(), "CUSTOM_TEMPLATE.docx");
+    const defaultDocxPath = path.resolve(process.cwd(), "CNT FORMATO PLANEACION.docx");
+    const templatePath = fs.existsSync(customDocxPath) ? customDocxPath : defaultDocxPath;
+    
+    console.log(`[ZIP Orchestration] Compiling docx with template: ${templatePath}`);
+    const templateBinary = fs.readFileSync(templatePath, "binary");
+    const zip = new PizZip(templateBinary);
+
+    try {
+      const fileKeys = Object.keys(zip.files);
+      console.log(`[ZIP Orchestration] Scanning ${fileKeys.length} files in template package.`);
+
+      for (const key of fileKeys) {
+        if (key === "word/document.xml") {
+          const originalXml = zip.file(key).asText();
+          const taggedXml = autoTagDocumentXml(originalXml);
+          zip.file(key, taggedXml);
+        } else if (key.startsWith("word/header") || key.startsWith("word/footer")) {
+          console.log(`[ZIP Orchestration] Auto-tagging header/footer file: ${key}`);
+          const originalXml = zip.file(key).asText();
+          
+          // Safe regex tag preservation to map header/footer tokens safely preserving original fonts and logotypes style
+          const taggedXml = originalXml.replace(/<w:t([^>]*)>([\s\S]*?)<\/w:t>/g, (match, attrs, text) => {
+            let updatedText = text;
+            if (/([Mm]ateria|[Aa]signatura|[Cc]urso)\s*:\s*([_.\-\s]*)$/i.test(updatedText)) {
+              updatedText = updatedText.replace(/([Mm]ateria|[Aa]signatura|[Cc]urso)\s*:\s*([_.\-\s]*)$/i, "$1: {materia}");
+            }
+            return `<w:t${attrs}>${updatedText}</w:t>`;
+          });
+          
+          zip.file(key, taggedXml);
+        }
+      }
+    } catch (err) {
+      console.error("[ZIP Orchestration] Error processing headers/footers in server.ts: ", err);
+    }
+
+    const doc = new Docxtemplater(zip, {
+      paragraphLoop: true,
+      linebreaks: true,
+    });
+
+    doc.render(wordPayload);
+
+    const outBuffer = doc.getZip().generate({
+      type: "nodebuffer",
+      compression: "DEFLATE"
+    });
 
     if (isPreview) {
       // In preview mode we deliver BOTH JSON representation and base64 encoded document binary
@@ -202,9 +263,10 @@ app.post("/api/curricula/generate", async (req, res) => {
       res.send(outBuffer);
     }
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Endpoint generation error: ", error);
-    res.status(500).json({ error: error?.message || "Ocurrió un error inesperado al estructurar la planeación." });
+    const errMessage = error instanceof Error ? error.message : "Ocurrió un error inesperado al estructurar la planeación.";
+    res.status(500).json({ error: errMessage });
   }
 });
 
@@ -213,8 +275,9 @@ app.get("/api/template/info", (req, res) => {
   try {
     const meta = getCustomTemplateMeta();
     res.json(meta);
-  } catch (err: any) {
-    res.status(500).json({ error: err?.message || "No se pudo obtener información de la plantilla." });
+  } catch (err: unknown) {
+    const errMessage = err instanceof Error ? err.message : "No se pudo obtener información de la plantilla.";
+    res.status(500).json({ error: errMessage });
   }
 });
 
@@ -227,8 +290,9 @@ app.post("/api/template/upload", (req, res) => {
   try {
     const meta = saveCustomTemplate(fileBase64, fileName);
     res.json({ success: true, meta });
-  } catch (err: any) {
-    res.status(500).json({ error: err?.message || "No se pudo guardar la plantilla personalizada." });
+  } catch (err: unknown) {
+    const errMessage = err instanceof Error ? err.message : "No se pudo guardar la plantilla personalizada.";
+    res.status(500).json({ error: errMessage });
   }
 });
 
@@ -236,8 +300,9 @@ app.post("/api/template/reset", (req, res) => {
   try {
     resetCustomTemplate();
     res.json({ success: true, message: "Plantilla restablecida al formato institucional predeterminado." });
-  } catch (err: any) {
-    res.status(500).json({ error: err?.message || "No se pudo restablecer la plantilla." });
+  } catch (err: unknown) {
+    const errMessage = err instanceof Error ? err.message : "No se pudo restablecer la plantilla.";
+    res.status(500).json({ error: errMessage });
   }
 });
 

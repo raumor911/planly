@@ -538,9 +538,9 @@ export function autoTagDocumentXml(documentXml: string): string {
   const injectTagIntoCell = (cellXml: string, tag: string): string => {
     if (cellXml.includes("<w:t")) {
       let replaced = false;
-      const withReplacedWt = cellXml.replace(/<w:t(?: [^>]*?)?>([\s\S]*?)<\/w:t>/, (match, p1) => {
+      const withReplacedWt = cellXml.replace(/<w:t([^>]*)>([\s\S]*?)<\/w:t>/, (match, attrs, content) => {
         replaced = true;
-        return `<w:t>${tag}</w:t>`;
+        return `<w:t${attrs}>${tag}</w:t>`;
       });
       if (replaced) return withReplacedWt;
     }
@@ -633,25 +633,19 @@ export function autoTagDocumentXml(documentXml: string): string {
       const dataRowXml = tblRows[bestHeaderRowIndex + 1];
       const dataRowCells = getCells(dataRowXml);
       
-      let lastModifiedCellIdx = -1;
       const updatedCells = dataRowCells.map((cellXml, cIdx) => {
         let tag = "";
         const role = detectedRoles[cIdx];
         if (role === "num") {
-          tag = "{#sesiones}{num}";
-          lastModifiedCellIdx = cIdx;
+          tag = "{num}";
         } else if (role === "fecha") {
           tag = "{fecha}";
-          lastModifiedCellIdx = cIdx;
         } else if (role === "tema") {
           tag = "{tema}";
-          lastModifiedCellIdx = cIdx;
         } else if (role === "actividad") {
           tag = "{actividad}";
-          lastModifiedCellIdx = cIdx;
         } else if (role === "objetivo") {
           tag = "{objetivo}";
-          lastModifiedCellIdx = cIdx;
         }
 
         if (tag) {
@@ -659,23 +653,6 @@ export function autoTagDocumentXml(documentXml: string): string {
         }
         return cellXml;
       });
-
-      // To close the sessions loop, we append `{/sesiones}` to the last modified cell or the very last cell of the row
-      const targetCloseIdx = lastModifiedCellIdx !== -1 ? lastModifiedCellIdx : (dataRowCells.length - 1);
-      
-      console.log(`[Auto Tag Engine] Injecting loop closer {/sesiones} in cell index: ${targetCloseIdx}`);
-      
-      const originalUpdatedCellXml = updatedCells[targetCloseIdx];
-      let finalTag = "";
-      const role = detectedRoles[targetCloseIdx];
-      if (role === "num") finalTag = "{#sesiones}{num}";
-      else if (role === "fecha") finalTag = "{fecha}";
-      else if (role === "tema") finalTag = "{tema}";
-      else if (role === "actividad") finalTag = "{actividad}";
-      else if (role === "objetivo") finalTag = "{objetivo}";
-
-      const closedTag = finalTag ? `${finalTag}{/sesiones}` : "{/sesiones}";
-      updatedCells[targetCloseIdx] = injectTagIntoCell(dataRowCells[targetCloseIdx], closedTag);
 
       // Now reconstruct the table row XML
       let rowStartTag = "<w:tr>";
@@ -690,7 +667,8 @@ export function autoTagDocumentXml(documentXml: string): string {
         rowPrXml = rowPrMatch[0];
       }
 
-      const updatedRowXml = `${rowStartTag}${rowPrXml}${updatedCells.join("")}</w:tr>`;
+      // Wrap the complete row element externally with docxtemplater loop tags so columns never deform
+      const updatedRowXml = `{#sesiones}${rowStartTag}${rowPrXml}${updatedCells.join("")}</w:tr>{/sesiones}`;
 
       // Reconstruct entire table XML preserving properties and grid
       const firstRowIdx = tblXml.indexOf("<w:tr");
@@ -727,16 +705,34 @@ export function compileDocxWithPayload(payload: RenderingPayload): Buffer {
   const templateBinary = fs.readFileSync(templatePath, "binary");
   const zip = new PizZip(templateBinary);
 
-  // Auto-tag document XML to support raw, untagged institution word files!
+  // Auto-tag document XML, headers and footers to support raw, untagged institution word files!
   try {
-    const documentXmlPath = "word/document.xml";
-    if (zip.file(documentXmlPath)) {
-      const originalXml = zip.file(documentXmlPath).asText();
-      const taggedXml = autoTagDocumentXml(originalXml);
-      zip.file(documentXmlPath, taggedXml);
+    const fileKeys = Object.keys(zip.files);
+    console.log(`[Template Engine] Dynamic scan detected ${fileKeys.length} files in zip.`);
+
+    for (const key of fileKeys) {
+      if (key === "word/document.xml") {
+        const originalXml = zip.file(key).asText();
+        const taggedXml = autoTagDocumentXml(originalXml);
+        zip.file(key, taggedXml);
+      } else if (key.startsWith("word/header") || key.startsWith("word/footer")) {
+        console.log(`[Template Engine] Auto-tagging header/footer file: ${key}`);
+        const originalXml = zip.file(key).asText();
+        
+        // Safe regex tag preservation to map header/footer tokens safely preserving original fonts and logotypes style
+        const taggedXml = originalXml.replace(/<w:t([^>]*)>([\s\S]*?)<\/w:t>/g, (match, attrs, text) => {
+          let updatedText = text;
+          if (/([Mm]ateria|[Aa]signatura|[Cc]urso)\s*:\s*([_.\-\s]*)$/i.test(updatedText)) {
+            updatedText = updatedText.replace(/([Mm]ateria|[Aa]signatura|[Cc]urso)\s*:\s*([_.\-\s]*)$/i, "$1: {materia}");
+          }
+          return `<w:t${attrs}>${updatedText}</w:t>`;
+        });
+        
+        zip.file(key, taggedXml);
+      }
     }
   } catch (err) {
-    console.error("[Template Engine] Fail during auto-tag engine processing:", err);
+    console.error("[Template Engine] Fail during dynamic auto-tag engine processing: ", err);
   }
 
   const doc = new Docxtemplater(zip, {

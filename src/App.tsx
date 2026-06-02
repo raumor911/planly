@@ -30,7 +30,6 @@ import {
 } from "lucide-react";
 import { SYLLABUS_SPECIMEN } from "./constants/specimen";
 import { SidebarMenu } from "./components/SidebarMenu";
-import { AsistentePlanly } from "./components/AsistentePlanly";
 import { FormSteps } from "./components/FormSteps";
 import { ExamModule } from "./components/ExamModule";
 import { PlanlyLogo } from "./components/PlanlyLogo";
@@ -43,7 +42,6 @@ export default function App() {
       return "inicio";
     }
   });
-  const [isCopilotVisible, setIsCopilotVisible] = useState(true);
   const [currentStep, setCurrentStep] = useState(() => {
     try {
       const stored = localStorage.getItem("planly_currentStep");
@@ -1688,49 +1686,6 @@ export default function App() {
             )}
 
           </main>
-
-          {/* 3. RIGHT AI SIDEBAR PANEL COMPANION (For contextual suggestions) */}
-          {activeTab === "planeacion" && isCopilotVisible && (
-            <AsistentePlanly 
-              temario={temario}
-              materia={materiaName}
-              numSesiones={numSesiones}
-              totalPct={totalPct}
-              onApplySuggestion={(suggestion) => {
-                // If suggestions is APA bibliography, we can automatically append to syllabus content
-                if (suggestion.includes("Arellano") || suggestion.includes("CONAC")) {
-                  setTemario(prev => prev + "\n\n---\nCONSEJO DE LECTURA SUGERIDA:\n" + suggestion);
-                } else if (suggestion.includes("🎯")) {
-                  // Append targets
-                  setTemario(prev => prev + "\n\n" + suggestion);
-                } else {
-                  alert("Sugerencia copiada. Puedes pegarla en cualquier celda o entrada del editor.");
-                }
-              }}
-              onClose={() => setIsCopilotVisible(false)}
-            />
-          )}
-
-          {/* FLOATING ACTION TAB TO RE-OPEN COLLAPSED COPILOT */}
-          {activeTab === "planeacion" && !isCopilotVisible && (
-            <button
-              onClick={() => setIsCopilotVisible(true)}
-              type="button"
-              className="absolute right-0 top-1/2 -translate-y-1/2 bg-gradient-to-b from-[#6D5DFB] to-[#5241DA] text-white py-5 px-2 rounded-l-2xl shadow-xl border-l border-b border-t border-white/20 flex flex-col items-center gap-3.5 transition-all hover:pl-4 group cursor-pointer z-35 font-sans"
-              title="Mostrar Copiloto IA para sugerencias"
-              id="btn-show-copiloto"
-            >
-              <div className="w-6 h-6 rounded-lg bg-white/20 flex items-center justify-center animate-pulse">
-                <Sparkles className="w-3.5 h-3.5 text-white" />
-              </div>
-              <span 
-                className="text-[10px] font-extrabold tracking-widest uppercase transition-all select-none" 
-                style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}
-              >
-                Copiloto IA
-              </span>
-            </button>
-          )}
 
         </div>
 
