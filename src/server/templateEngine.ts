@@ -25,10 +25,10 @@ export class FidelityTemplateEngine {
     const imagesBefore = Object.keys(zip.files).filter(k => k.startsWith('word/media/')).length;
     console.log(`[DOCX] Images before: ${imagesBefore}`);
 
-    // 1. Inyección de Campos Libres (Passive Tagging) mediante Regex
+    // 1. Inyección de Campos Libres (Passive Tagging) mediante Regex sobre <w:t>
     xml = this.injectPassiveTags(xml, payload);
 
-    // 2. Detección de Tabla de Planeación y Marcado de Bucles mediante Regex
+    // 2. Detección de Tabla por barrido de filas y Marcado de Bucles
     xml = this.injectLoopTags(xml);
 
     // Guardar XML modificado en el ZIP
@@ -40,20 +40,31 @@ export class FidelityTemplateEngine {
       linebreaks: true,
     });
 
-    // Mapeo de datos para que coincidan con las etiquetas inyectadas
+    // Mapeo de datos dual (soporta sesiones y sessions, campos planos y estructurados)
+    const sessionsMapped = (payload.sessions || []).map(s => ({
+      num: s.num || 0,
+      fecha: s.fecha || '',
+      tema: s.tema || '',
+      actividad: s.actividad || '',
+      objetivo: s.objetivo || ''
+    }));
+
     const renderData = {
+      // Campos planos para reemplazo directo
       materia: payload.course?.name || 'Asignatura',
       objetivo_general: payload.course?.generalObjective || '',
       clave: payload.course?.code || '',
       docente: 'Docente Planly',
       ciclo: '2026-1',
-      sesiones: (payload.sessions || []).map(s => ({
-        num: s.num || 0,
-        fecha: s.fecha || '',
-        tema: s.tema || '',
-        actividad: s.actividad || '',
-        objetivo: s.objetivo || ''
-      }))
+      // Soporte dual para bucles
+      sesiones: sessionsMapped,
+      sessions: sessionsMapped,
+      // Metadatos de curso
+      course: {
+        name: payload.course?.name || '',
+        code: payload.course?.code || '',
+        generalObjective: payload.course?.generalObjective || ''
+      }
     };
 
     try {
@@ -88,62 +99,56 @@ export class FidelityTemplateEngine {
       { regex: /([Cc]iclo|[Pp]eriodo|[Cc]uatrimestre)\s*:\s*([_.\-\s]*)/i, tag: '{ciclo}' }
     ];
 
-    let updatedXml = xml;
-    dictionary.forEach(entry => {
-      if (entry.regex.test(updatedXml) && !updatedXml.includes(entry.tag)) {
-        updatedXml = updatedXml.replace(entry.regex, (match, label) => {
-          return `${label}: ${entry.tag}`;
-        });
-      }
+    // Reemplazo seguro únicamente dentro del texto plano de los tags <w:t>
+    return xml.replace(/(<w:t[^>]*>)([\s\S]*?)(<\/w:t>)/g, (match, openTag, text, closeTag) => {
+      let updatedText = text;
+      dictionary.forEach(entry => {
+        if (entry.regex.test(updatedText) && !updatedText.includes(entry.tag)) {
+          updatedText = updatedText.replace(entry.regex, (m: string, label: string) => `${label}: ${entry.tag}`);
+        }
+      });
+      return `${openTag}${updatedText}${closeTag}`;
     });
-
-    return updatedXml;
   }
 
   private injectLoopTags(xml: string): string {
     if (xml.includes('{#sesiones}')) return xml;
 
-    const tableRegex = /<w:tbl[\s\S]*?<\/w:tbl>/g;
-    const tables = xml.match(tableRegex);
+    // 1. Barrido de filas <w:tr> para localizar la cabecera didáctica
+    const rowRegex = /<w:tr[\s\S]*?<\/w:tr>/g;
+    const allRows = xml.match(rowRegex);
+    if (!allRows) return xml;
 
-    if (!tables) return xml;
-
-    let selectedTableIdx = -1;
-    let maxScore = 0;
     const sessionHeaders = ['Sesión', 'Fecha', 'Tema', 'Actividades', 'Objetivo', 'Recursos'];
+    let headerRowIdx = -1;
 
-    tables.forEach((tableXml, idx) => {
+    for (let i = 0; i < allRows.length; i++) {
       let score = 0;
       sessionHeaders.forEach(h => {
-        if (new RegExp(h, 'i').test(tableXml)) score++;
+        if (new RegExp(h, 'i').test(allRows[i])) score++;
       });
 
-      // UMBRAL ACTUALIZADO: score >= 2 para mayor tolerancia
-      if (score >= 2 && score > maxScore) {
-        maxScore = score;
-        selectedTableIdx = idx;
+      if (score >= 2) {
+        headerRowIdx = i;
+        break;
       }
-    });
+    }
 
-    if (selectedTableIdx === -1) {
-      console.warn('[DOCX] No se detectó tabla de planeación con puntuación >= 2');
+    if (headerRowIdx === -1 || headerRowIdx + 1 >= allRows.length) {
+      console.warn('[DOCX] No se detectó tabla de planeación mediante barrido de filas.');
       return xml;
     }
 
-    console.log(`[DOCX] Planning table selected: index ${selectedTableIdx}`);
+    console.log(`[DOCX] Planning header row found at index ${headerRowIdx}`);
 
-    let tableXml = tables[selectedTableIdx];
-    const rows = tableXml.match(/<w:tr[\s\S]*?<\/w:tr>/g);
+    // 2. Extraer la fila base (contigua inferior) y sus celdas
+    const dataRowXml = allRows[headerRowIdx + 1];
+    const cellRegex = /<w:tc[\s\S]*?<\/w:tc>/g;
+    const cells = dataRowXml.match(cellRegex) || [];
 
-    if (!rows || rows.length < 2) return xml;
-
-    const dataRowXml = rows[1];
-    
-    // 1. Extraer el arreglo estructurado de celdas
-    const cells = dataRowXml.match(/<w:tc[\s\S]*?<\/w:tc>/g) || [];
     if (cells.length === 0) return xml;
 
-    // 2. Mapear cada celda de forma aislada depositando marcadores correspondientes
+    // 3. Mapear cada columna inyectando su variable correspondiente
     const updatedCells = cells.map((cellXml, cIdx) => {
       let token = '';
       switch (cIdx) {
@@ -154,7 +159,7 @@ export class FidelityTemplateEngine {
         default: token = '{objetivo}'; break;
       }
 
-      // Envolver perimetralmente los extremos con {#sesiones} y {/sesiones}
+      // 4. Anteponer {#sesiones} y anexar {/sesiones} perimetralmente dentro de <w:t>
       if (cIdx === 0) {
         token = `{#sesiones}${token}`;
       }
@@ -162,14 +167,12 @@ export class FidelityTemplateEngine {
         token = `${token}{/sesiones}`;
       }
 
-      // Reemplazar únicamente el contenido de <w:t> sin alterar propiedades de la celda
+      // Reemplazo limpio intracelda pura sobre el tag <w:t>
       return cellXml.replace(/(<w:t[^>]*>)([\s\S]*?)(<\/w:t>)/, `$1${token}$3`);
     });
 
-    // 3. Reensamblar updatedRowXml e inyectarlo de vuelta
-    const updatedRowXml = dataRowXml.replace(/<w:tc[\s\S]*?<\/w:tc>/g, () => updatedCells.shift() || '');
-    
-    const updatedTableXml = tableXml.replace(rows[1], updatedRowXml);
-    return xml.replace(tables[selectedTableIdx], updatedTableXml);
+    // 5. Reensamblar updatedRowXml e inyectarlo en el documento
+    const updatedRowXml = dataRowXml.replace(cellRegex, () => updatedCells.shift() || '');
+    return xml.replace(allRows[headerRowIdx + 1], updatedRowXml);
   }
 }
