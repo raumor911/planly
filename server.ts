@@ -17,11 +17,12 @@ import {
 } from "./src/server/geminiService";
 import { 
   getSessionDate, 
-  compileDocxWithPayload
+  FidelityTemplateEngine
 } from "./src/server/templateEngine";
 
 const syllabusParser = new SyllabusParser();
 const docxOrchestrator = new DocxOrchestrator();
+const fidelityEngine = new FidelityTemplateEngine();
 
 const app = express();
 const PORT = 3000;
@@ -166,7 +167,7 @@ app.post("/api/curricula/generate", async (req, res) => {
     const docxPayload: DocxPayload = {
       course: {
         name: cleanSubject,
-        code: "CPP09", // Default code for institutional compliance
+        code: "CPP09",
         generalObjective: "Al término del curso, el estudiante construirá estados financieros y presupuestales..."
       },
       sessions: sessions.map((s: any, idx: number) => ({
@@ -184,6 +185,8 @@ app.post("/api/curricula/generate", async (req, res) => {
       }
     };
 
+    console.log(`[DOCX] Payload sessions count: ${docxPayload.sessions.length}`);
+
     if (isPreview) {
       res.json({ success: true, materia: cleanSubject, payload: docxPayload });
       return;
@@ -197,16 +200,19 @@ app.post("/api/curricula/generate", async (req, res) => {
       finalTemplate = fs.readFileSync(defaultPath).toString("base64");
     }
 
-    // Process ephemeral in-memory with Docxtemplater for native stability
-    const outBuffer = await compileDocxWithPayload(docxPayload, finalTemplate);
+    // Process ephemeral in-memory with FidelityTemplateEngine (Regex + Docxtemplater)
+    const zip = new PizZip(Buffer.from(finalTemplate, 'base64'));
+    const imagesBefore = Object.keys(zip.files).filter(k => k.startsWith('word/media/')).length;
     
-    // Audit Certification Trazas (Simplified for Docxtemplater flow)
-    console.log(`[DOCX] Images before: ${Object.keys(new PizZip(Buffer.from(finalTemplate, 'base64'))).filter(k => k.startsWith('word/media/')).length}`);
-    console.log(`[DOCX] Images after: ${Object.keys(new PizZip(outBuffer)).filter(k => k.startsWith('word/media/')).length}`);
+    const outBuffer = await fidelityEngine.process(zip, docxPayload);
+    
+    const imagesAfter = Object.keys(new PizZip(outBuffer).files).filter(k => k.startsWith('word/media/')).length;
+    console.log(`[DOCX] Images before: ${imagesBefore}`);
+    console.log(`[DOCX] Images after: ${imagesAfter}`);
     console.log("[DOCX] Output generated successfully");
 
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
-    res.setHeader("Content-Disposition", 'attachment; filename="PROGRAMA_OPERATIVO_FINAL.docx"');
+    res.setHeader("Content-Disposition", `attachment; filename="Planeacion_${cleanSubject.replace(/\s+/g, '_')}.docx"`);
     res.send(outBuffer);
 
   } catch (error: any) {
