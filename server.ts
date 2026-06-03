@@ -17,13 +17,11 @@ import {
 } from "./src/server/geminiService";
 import { 
   getSessionDate, 
-} from "./src/server/modules/docx_legacy/engine";
-
-import { FidelityTemplateEngine } from "./src/server/templateEngine";
+  compileDocxWithPayload
+} from "./src/server/templateEngine";
 
 const syllabusParser = new SyllabusParser();
 const docxOrchestrator = new DocxOrchestrator();
-const fidelityEngine = new FidelityTemplateEngine();
 
 const app = express();
 const PORT = 3000;
@@ -199,23 +197,12 @@ app.post("/api/curricula/generate", async (req, res) => {
       finalTemplate = fs.readFileSync(defaultPath).toString("base64");
     }
 
-    // Process ephemeral in-memory
-    const templateBuffer = Buffer.from(finalTemplate, "base64");
-    const zip = new PizZip(templateBuffer);
-    const imagesBefore = Object.keys(zip.files).filter(k => k.startsWith('word/media/')).length;
+    // Process ephemeral in-memory with Docxtemplater for native stability
+    const outBuffer = await compileDocxWithPayload(docxPayload, finalTemplate);
     
-    const audit = await fidelityEngine.process(zip, docxPayload);
-    
-    const outBuffer = zip.generate({ type: 'nodebuffer', compression: 'DEFLATE' });
-    const imagesAfter = Object.keys(zip.files).filter(k => k.startsWith('word/media/')).length;
-
-    // Audit Certification Trazas
-    console.log(`[DOCX] Tables detected: ${audit.tablesDetected}`);
-    console.log(`[DOCX] Planning table selected: index ${audit.tableSelected}`);
-    console.log(`[DOCX] Base row cells: ${audit.baseRowCells}`);
-    console.log(`[DOCX] Images before: ${audit.imagesBefore}`);
-    console.log(`[DOCX] Images after: ${audit.imagesAfter}`);
-    console.log(`[DOCX] Headers preserved: ${audit.headersPreserved}`);
+    // Audit Certification Trazas (Simplified for Docxtemplater flow)
+    console.log(`[DOCX] Images before: ${Object.keys(new PizZip(Buffer.from(finalTemplate, 'base64'))).filter(k => k.startsWith('word/media/')).length}`);
+    console.log(`[DOCX] Images after: ${Object.keys(new PizZip(outBuffer)).filter(k => k.startsWith('word/media/')).length}`);
     console.log("[DOCX] Output generated successfully");
 
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
