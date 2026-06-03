@@ -118,14 +118,15 @@ export class FidelityTemplateEngine {
         if (new RegExp(h, 'i').test(tableXml)) score++;
       });
 
-      if (score >= 4 && score > maxScore) {
+      // UMBRAL ACTUALIZADO: score >= 2 para mayor tolerancia
+      if (score >= 2 && score > maxScore) {
         maxScore = score;
         selectedTableIdx = idx;
       }
     });
 
     if (selectedTableIdx === -1) {
-      console.warn('[DOCX] No se detectó tabla de planeación con puntuación >= 4');
+      console.warn('[DOCX] No se detectó tabla de planeación con puntuación >= 2');
       return xml;
     }
 
@@ -136,14 +137,13 @@ export class FidelityTemplateEngine {
 
     if (!rows || rows.length < 2) return xml;
 
-    // Fila base de captura (generalmente la segunda fila)
     const dataRowXml = rows[1];
     
-    // 1. Recuperar arreglo de celdas
-    const cells = dataRowXml.match(/<w:tc[\s\S]*?<\/w:tc>/g);
-    if (!cells) return xml;
+    // 1. Recuperar arreglo estructurado de celdas
+    const cells = dataRowXml.match(/<w:tc[\s\S]*?<\/w:tc>/g) || [];
+    if (cells.length === 0) return xml;
 
-    // 2. Mapear cada celda asignándole su respectivo token dinámico
+    // 2. Mapear individualmente cada celda en aislamiento
     const updatedCells = cells.map((cellXml, cIdx) => {
       let token = '';
       switch (cIdx) {
@@ -154,19 +154,23 @@ export class FidelityTemplateEngine {
         default: token = '{objetivo}'; break;
       }
 
-      // 3. Anteponer {#sesiones} al primero y anexar {/sesiones} al último
-      if (cIdx === 0) {
-        token = `{#sesiones}${token}`;
-      }
+      // 3. Remata con {/sesiones} después del token de la última columna
       if (cIdx === cells.length - 1) {
         token = `${token}{/sesiones}`;
       }
 
-      // 4. Reemplazar contenido del nodo <w:t> intracelda pura
-      return cellXml.replace(/(<w:t[^>]*>)([\s\S]*?)(<\/w:t>)/, `$1${token}$3`);
+      // 4. Reemplazo limpio usando regex únicamente sobre el tag <w:t>
+      let updatedCell = cellXml.replace(/(<w:t[^>]*>)([\s\S]*?)(<\/w:t>)/, `$1${token}$3`);
+
+      // 3. Agrega perimetralmente {#sesiones} antes de la primera celda útil
+      if (cIdx === 0) {
+        updatedCell = '{#sesiones}' + updatedCell;
+      }
+
+      return updatedCell;
     });
 
-    // 5. Reensamblar updatedRowXml y reemplazar la fila original
+    // 5. Reensamblar updatedRowXml
     let cellIdx = 0;
     const updatedRowXml = dataRowXml.replace(/<w:tc[\s\S]*?<\/w:tc>/g, () => updatedCells[cellIdx++] || '');
     
