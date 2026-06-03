@@ -202,13 +202,8 @@ app.post("/api/curricula/generate", async (req, res) => {
 
     // Process ephemeral in-memory with FidelityTemplateEngine (Regex + Docxtemplater)
     const zip = new PizZip(Buffer.from(finalTemplate, 'base64'));
-    const imagesBefore = Object.keys(zip.files).filter(k => k.startsWith('word/media/')).length;
-    
     const outBuffer = await fidelityEngine.process(zip, docxPayload);
     
-    const imagesAfter = Object.keys(new PizZip(outBuffer).files).filter(k => k.startsWith('word/media/')).length;
-    console.log(`[DOCX] Images before: ${imagesBefore}`);
-    console.log(`[DOCX] Images after: ${imagesAfter}`);
     console.log("[DOCX] Output generated successfully");
 
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");

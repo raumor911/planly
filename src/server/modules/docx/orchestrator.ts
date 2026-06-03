@@ -1,15 +1,12 @@
 import PizZip from 'pizzip';
 import { DocxPayload } from './types';
-import { PreservationEngine } from './engine';
-import { ValidationEngine } from '../validation/validator';
+import { FidelityTemplateEngine } from '../../templateEngine';
 
 export class DocxOrchestrator {
-  private engine: PreservationEngine;
-  private validator: ValidationEngine;
+  private engine: FidelityTemplateEngine;
 
   constructor() {
-    this.engine = new PreservationEngine();
-    this.validator = new ValidationEngine();
+    this.engine = new FidelityTemplateEngine();
   }
 
   public async generate(templateBase64: string, payload: DocxPayload): Promise<{ buffer: Buffer; errors?: string[] }> {
@@ -17,29 +14,15 @@ export class DocxOrchestrator {
     
     try {
       // 1. Load ZIP
-      const zip = new PizZip(Buffer.from(templateBase64, 'base64').toString('binary'));
+      const zip = new PizZip(Buffer.from(templateBase64, 'base64'));
 
-      // 2. Process Preservation
-      const processedZip = await this.engine.process(zip, payload);
-
-      // 3. Validate
-      const validation = await this.validator.validate(processedZip);
-      if (!validation.valid) {
-        console.warn('[DocxOrchestrator] Validation warnings:', validation.errors);
-      }
-
-      // 4. Export
-      console.log('[DocxOrchestrator] Generating final buffer...');
-      const buffer = processedZip.generate({
-        type: 'nodebuffer',
-        compression: 'DEFLATE',
-      });
+      // 2. Process with Fidelity Engine (Regex + Docxtemplater)
+      const buffer = await this.engine.process(zip, payload);
 
       console.log(`[DocxOrchestrator] DOCX generation completed. Buffer size: ${buffer.length} bytes`);
 
       return {
         buffer,
-        errors: validation.valid ? undefined : validation.errors,
       };
     } catch (error: any) {
       console.error('[DocxOrchestrator] Critical error during DOCX generation:', error);

@@ -9,6 +9,10 @@ export function getSessionDate(index: number, startDate: string): string {
 }
 
 export class FidelityTemplateEngine {
+  /**
+   * Procesa la plantilla DOCX utilizando manipulación pura de strings (Regex)
+   * para inyectar etiquetas semánticas y luego delega el renderizado a Docxtemplater.
+   */
   public async process(zip: PizZip, payload: DocxPayload): Promise<Buffer> {
     const documentXmlPath = 'word/document.xml';
     let xml = zip.file(documentXmlPath)?.asText();
@@ -17,15 +21,17 @@ export class FidelityTemplateEngine {
       throw new Error('[FidelityEngine] No se pudo encontrar word/document.xml');
     }
 
-    console.log('[DOCX] Inyectando tags semánticos mediante Regex...');
+    // Auditoría de imágenes inicial
+    const imagesBefore = Object.keys(zip.files).filter(k => k.startsWith('word/media/')).length;
+    console.log(`[DOCX] Images before: ${imagesBefore}`);
 
-    // 1. Inyección de Campos Libres (Passive Tagging)
+    // 1. Inyección de Campos Libres (Passive Tagging) mediante Regex
     xml = this.injectPassiveTags(xml, payload);
 
-    // 2. Detección de Tabla de Planeación y Marcado de Bucles
+    // 2. Detección de Tabla de Planeación y Marcado de Bucles mediante Regex
     xml = this.injectLoopTags(xml);
 
-    // Guardar XML modificado antes de Docxtemplater
+    // Guardar XML modificado en el ZIP
     zip.file(documentXmlPath, xml);
 
     // 3. Render Final con Docxtemplater
@@ -34,7 +40,8 @@ export class FidelityTemplateEngine {
       linebreaks: true,
     });
 
-    const viewData = {
+    // Mapeo de datos para que coincidan con las etiquetas inyectadas
+    const renderData = {
       materia: payload.course?.name || 'Asignatura',
       objetivo_general: payload.course?.generalObjective || '',
       clave: payload.course?.code || '',
@@ -50,13 +57,23 @@ export class FidelityTemplateEngine {
     };
 
     try {
-      doc.render(viewData);
+      doc.render(renderData);
     } catch (error: any) {
       console.error('[DOCX] Error renderizando con Docxtemplater:', error);
       throw error;
     }
 
-    return doc.getZip().generate({
+    const finalZip = doc.getZip();
+    
+    // Auditoría final
+    const imagesAfter = Object.keys(finalZip.files).filter(k => k.startsWith('word/media/')).length;
+    const headersPreserved = Object.keys(finalZip.files).some(k => k.startsWith('word/header'));
+    
+    console.log(`[DOCX] Images after: ${imagesAfter}`);
+    console.log(`[DOCX] Headers preserved: ${headersPreserved}`);
+    console.log("[DOCX] Output generated successfully");
+
+    return finalZip.generate({
       type: 'nodebuffer',
       compression: 'DEFLATE',
     });
@@ -73,10 +90,8 @@ export class FidelityTemplateEngine {
 
     let updatedXml = xml;
     dictionary.forEach(entry => {
-      // Solo inyectamos el tag si la sección existe pero no tiene el tag de Docxtemplater
       if (entry.regex.test(updatedXml) && !updatedXml.includes(entry.tag)) {
         updatedXml = updatedXml.replace(entry.regex, (match, label) => {
-          // Buscamos el cierre de <w:t> más cercano para insertar el tag
           return `${label}: ${entry.tag}`;
         });
       }
@@ -86,10 +101,8 @@ export class FidelityTemplateEngine {
   }
 
   private injectLoopTags(xml: string): string {
-    // Si ya tiene los tags, no hacemos nada
     if (xml.includes('{#sesiones}')) return xml;
 
-    // Buscamos tablas que parezcan de planeación por sus encabezados
     const tableRegex = /<w:tbl[\s\S]*?<\/w:tbl>/g;
     const tables = xml.match(tableRegex);
 
@@ -97,7 +110,6 @@ export class FidelityTemplateEngine {
 
     let selectedTableIdx = -1;
     let maxScore = 0;
-
     const sessionHeaders = ['Sesión', 'Fecha', 'Tema', 'Actividades', 'Objetivo', 'Recursos'];
 
     tables.forEach((tableXml, idx) => {
@@ -124,14 +136,13 @@ export class FidelityTemplateEngine {
 
     if (!rows || rows.length < 2) return xml;
 
-    // Asumimos que la primera fila es header y la segunda es la base de datos
-    // Buscamos el primer <w:t> de la segunda fila
+    // Fila base de captura (generalmente la segunda fila)
     let dataRowXml = rows[1];
     
-    // Inyectamos {#sesiones} en el primer <w:t>
+    // Inyectar etiquetas de bucle de Docxtemplater {#sesiones} y {/sesiones}
+    // dentro de los nodos <w:t> para preservar el formato OpenXML
     dataRowXml = dataRowXml.replace(/(<w:t[^>]*>)/, '$1{#sesiones}');
     
-    // Inyectamos {/sesiones} en el último <w:t>
     const tNodes = dataRowXml.match(/<w:t[^>]*>[\s\S]*?<\/w:t>/g);
     if (tNodes && tNodes.length > 0) {
       const lastT = tNodes[tNodes.length - 1];
