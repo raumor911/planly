@@ -777,149 +777,121 @@ export default function App() {
                     </div>
                   )}
 
-                  {/* STEP 2: LOAD FORMAT/TEMPLATE */}
-                  {currentStep === 2 && (
-                    <div className="space-y-6">
-                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                        <div>
-                          <h2 className="text-lg font-bold text-[#0B2A5B]">Paso 2: Sintoniza tu formato institucional</h2>
-                          <p className="text-xs text-[#64748B]">Carga tu propio archivo de Word (.docx). Planly inyectará contenidos respetando tablas, logotipos y estilos institucionales.</p>
-                        </div>
-                        {templateMeta.hasCustom && (
-                          <button
-                            type="button"
-                            onClick={handleResetTemplate}
-                            className="bg-white hover:bg-red-50 text-red-600 border border-red-200 px-3 py-1.5 text-[11px] font-bold rounded-lg flex items-center gap-1 cursor-pointer transition-all shrink-0"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                            <span>Remover Personalizada</span>
-                          </button>
-                        )}
-                      </div>
+                  {/* STEP 2: LOAD FORMAT/TEMPLATE */} 
+                  {currentStep === 2 && ( 
+                    <div className="space-y-6"> 
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"> 
+                        <div> 
+                          <h2 className="text-lg font-bold text-[#0B2A5B]">Paso 2: Carga tu formato institucional</h2> 
+                          <p className="text-xs text-[#64748B]">Sube el archivo de Word (.docx) oficial de tu universidad. Planly respetará tus logotipos, fuentes, márgenes y estilos corporativos intactos.</p> 
+                        </div> 
+                        {templateMeta.hasCustom && ( 
+                          <button 
+                            type="button" 
+                            onClick={handleResetTemplate} 
+                            className="bg-white hover:bg-rose-50 text-rose-600 border border-rose-200 px-3 py-1.5 text-[11px] font-bold rounded-lg flex items-center gap-1 cursor-pointer transition-all shrink-0" 
+                          > 
+                            <Trash2 className="w-3 h-3" /> 
+                            <span>Remover Plantilla</span> 
+                          </button> 
+                        )} 
+                      </div> 
 
-                      {/* Status alerts for current template */}
-                      {templateMsg && (
-                        <div className="bg-[#EAFBF0] border border-[#22C55E]/30 text-[#1E7E34] text-xs p-3.5 rounded-xl flex items-start gap-2">
-                          <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
-                          <p className="font-medium">{templateMsg}</p>
-                        </div>
-                      )}
-                      {templateError && (
-                        <div className="bg-red-50 border border-red-200 text-red-700 text-xs p-3.5 rounded-xl flex items-start gap-2">
-                          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                          <p className="font-medium">{templateError}</p>
-                        </div>
-                      )}
+                      {/* Status alerts for current template */} 
+                      {templateMsg && ( 
+                        <div className="bg-[#EAFBF0] border border-[#22C55E]/30 text-[#1E7E34] text-xs p-3.5 rounded-xl flex items-start gap-2"> 
+                          <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" /> 
+                          <p className="font-medium">{templateMsg}</p> 
+                        </div> 
+                      )} 
+                      {templateError && ( 
+                        <div className="bg-rose-50 border border-rose-200 text-rose-700 text-xs p-3.5 rounded-xl flex items-start gap-2"> 
+                          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" /> 
+                          <p className="font-medium">{templateError}</p> 
+                        </div> 
+                      )} 
 
-                      {/* Active Template card display */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className={`p-4 rounded-xl border transition-all ${!templateMeta.hasCustom ? "border-2 border-[#27C7B8] bg-teal-50/10 shadow-xs" : "border-[#D9E2EC] bg-white opacity-60"}`}>
-                          <div className="flex items-start justify-between">
-                            <div className="flex gap-3">
-                              <div className="w-9 h-9 rounded-lg bg-[#EAF4FF] text-[#1677D2] flex items-center justify-center shrink-0">
-                                <FileText className="w-4 h-4" />
-                              </div>
-                              <div>
-                                <h4 className="text-xs font-bold text-[#0B2A5B]">Formato Original Oficial (Planly)</h4>
-                                <p className="text-[10px] text-slate-500 mt-0.5">Estructura certificada multilayout de 14 semanas con rúbricas automatizadas.</p>
-                              </div>
-                            </div>
-                            {!templateMeta.hasCustom && (
-                              <span className="bg-[#EAFBF0] text-[#22C55E] text-[8px] font-extrabold px-1.5 py-0.5 rounded-full border border-[#22C55E]/20 shrink-0">
-                                Activo
-                              </span>
-                            )}
-                          </div>
-                        </div>
+                      {/* Tarjeta de Estado de Archivo Activo (Sólo si ya existe carga en RAM) */} 
+                      {templateMeta.hasCustom && ( 
+                        <div className="p-4 rounded-xl border-2 border-[#27C7B8] bg-teal-50/10 shadow-xs flex items-center justify-between"> 
+                          <div className="flex gap-3 items-center min-w-0"> 
+                            <div className="w-9 h-9 rounded-lg bg-teal-50 text-[#27C7B8] flex items-center justify-center shrink-0"> 
+                              <FileUp className="w-5 h-5" /> 
+                            </div> 
+                            <div className="min-w-0"> 
+                              <h4 className="text-xs font-bold text-[#0B2A5B] truncate max-w-sm"> 
+                                {templateMeta.fileName} 
+                              </h4> 
+                              <p className="text-[10px] text-slate-500 mt-0.5"> 
+                                Tamaño: {((templateMeta.fileSize || 0) / 1024).toFixed(1)} KB • Listo para recibir inyección de datos 
+                              </p> 
+                            </div> 
+                          </div> 
+                          <span className="bg-[#EAFBF0] text-[#22C55E] text-[9px] font-extrabold px-2.5 py-1 rounded-full border border-[#22C55E]/20 flex items-center gap-1 shrink-0"> 
+                            <Check className="w-3 h-3" /> Formato Vinculado 
+                          </span> 
+                        </div> 
+                      )} 
 
-                        <div className={`p-4 rounded-xl border transition-all ${templateMeta.hasCustom ? "border-2 border-[#27C7B8] bg-teal-50/10 shadow-xs" : "border-dashed border-[#D9E2EC] bg-slate-50/40 text-slate-400"}`}>
-                          <div className="flex items-start justify-between">
-                            <div className="flex gap-3">
-                              <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${templateMeta.hasCustom ? "bg-teal-50 text-[#27C7B8]" : "bg-slate-100 text-slate-400"}`}>
-                                <FileUp className="w-4 h-4" />
-                              </div>
-                              <div className="min-w-0">
-                                <h4 className="text-xs font-bold text-[#0B2A5B] truncate max-w-[180px]">
-                                  {templateMeta.hasCustom ? templateMeta.fileName : "Tu archivo personalizado (.docx)"}
-                                </h4>
-                                <p className="text-[10px] mt-0.5 truncate">
-                                  {templateMeta.hasCustom 
-                                    ? `Cargado: ${( (templateMeta.fileSize || 0) / 1024 ).toFixed(1)} KB • Listo` 
-                                    : "Sube tu formato para una personalización completa y exacta."}
-                                </p>
-                              </div>
-                            </div>
-                            {templateMeta.hasCustom && (
-                              <span className="bg-[#EAFBF0] text-[#22C55E] text-[8px] font-extrabold px-1.5 py-0.5 rounded-full border border-[#22C55E]/20 flex items-center gap-0.5 shrink-0">
-                                <Check className="w-2 h-2" /> Activo
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Dropzone container inside wizard */}
-                      <div className="border-2 border-dashed border-[#B9DFFF] bg-[#EAF4FF]/20 rounded-2xl p-6 text-center relative cursor-pointer group hover:bg-[#EAF4FF]/35 transition-all">
-                        <input
-                          type="file"
-                          accept=".docx"
-                          onChange={handleTemplateUpload}
-                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                        />
+                      {/* Dropzone container inside wizard */} 
+                      <div className="border-2 border-dashed border-[#B9DFFF] bg-[#EAF4FF]/20 rounded-2xl p-8 text-center relative cursor-pointer group hover:bg-[#EAF4FF]/35 transition-all"> 
+                        <input 
+                          type="file" 
+                          accept=".docx" 
+                          onChange={handleTemplateUpload} 
+                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" 
+                        /> 
                         
-                        {uploadingTemplate ? (
-                          <div className="space-y-3 py-2">
-                            <Loader2 className="w-8 h-8 text-[#1677D2] animate-spin mx-auto" />
-                            <span className="font-bold text-xs text-[#0B2A5B] block">Validando e importando tu estructura de Word...</span>
-                          </div>
-                        ) : (
-                          <div className="space-y-2 py-1">
-                            <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center mx-auto text-[#1677D2] border border-slate-200 group-hover:scale-105 transition-transform shadow-xs">
-                              <FileUp className="w-4 h-4" />
-                            </div>
-                            <div>
-                              <span className="font-bold text-xs text-[#0B2A5B] block">Haz clic o arrastra tu plantilla institucional aquí (.docx)</span>
-                              <span className="text-[10px] text-slate-400 block mt-0.5">Soporta cualquier plantilla de Word (.docx) con logotipos de hasta 10 MB</span>
-                            </div>
-                          </div>
-                        )}
-                      </div>
+                        {uploadingTemplate ? ( 
+                          <div className="space-y-3 py-2"> 
+                            <Loader2 className="w-8 h-8 text-[#1677D2] animate-spin mx-auto" /> 
+                            <span className="font-bold text-xs text-[#0B2A5B] block">Validando e indexando celdas del Word institucional...</span> 
+                          </div> 
+                        ) : ( 
+                          <div className="space-y-2 py-1"> 
+                            <div className="w-12 h-12 rounded-full bg-white flex items-center justify-center mx-auto text-[#1677D2] border border-slate-200 group-hover:scale-105 transition-transform shadow-xs"> 
+                              <FileUp className="w-5 h-5" /> 
+                            </div> 
+                            <div> 
+                              <span className="font-bold text-xs text-[#0B2A5B] block">Haz clic o arrastra tu formato oficial aquí (.docx)</span> 
+                              <span className="text-[10px] text-slate-400 block mt-1">Soporta cualquier archivo Word (.docx) de hasta 10 MB con sus logos de origen</span> 
+                            </div> 
+                          </div> 
+                        )} 
+                      </div> 
 
-                      <div className="bg-slate-50 border border-slate-200/60 rounded-xl p-3.5 space-y-2 text-[11px] text-[#64748B]">
-                        <p className="font-bold text-[#0B2A5B] flex items-center gap-1">
-                          <span>💡 Guía rápida para inyección exacta:</span>
-                        </p>
-                        <p className="leading-relaxed">
-                          La plantilla puede llevar cualquier diseño institucional, tablas personalizadas y combinaciones de colores. Planly respeta todos los textos estáticos e inyectará los contenidos calculados en las siguientes etiquetas opcionales:
-                        </p>
-                        <div className="flex flex-wrap gap-1.5 py-1">
-                          <span className="bg-white border border-slate-200 px-1.5 py-0.5 rounded font-mono text-[9px] text-[#0B2A5B] font-bold">{`{materia}`}</span>
-                          <span className="bg-white border border-slate-200 px-1.5 py-0.5 rounded font-mono text-[9px] text-[#0B2A5B] font-bold">{`{examen_pct}`}</span>
-                          <span className="bg-white border border-slate-200 px-1.5 py-0.5 rounded font-mono text-[9px] text-[#0B2A5B] font-bold">{`{continua_pct}`}</span>
-                          <span className="bg-white border border-slate-200 px-1.5 py-0.5 rounded font-mono text-[9px] text-[#0B2A5B] font-bold">{`{#sesiones}...{/sesiones}`}</span>
-                        </div>
-                      </div>
+                      <div className="bg-slate-50 border border-slate-200/60 rounded-xl p-4 space-y-2 text-[11px] text-[#64748B]"> 
+                        <p className="font-bold text-[#0B2A5B] flex items-center gap-1"> 
+                          <span>💡 Mapeo Semántico Pasivo Automático:</span> 
+                        </p> 
+                        <p className="leading-relaxed"> 
+                          No necesitas modificar tu Word. Planly leerá los encabezados de tus tablas de forma adaptativa y buscará rubros como <strong>"Materia:"</strong> u <strong>"Objetivo General:"</strong> para ingresar el contenido de la IA de manera directa preservando tu diseño tipográfico original. 
+                        </p> 
+                      </div> 
 
-                      <div className="pt-4 border-t border-slate-200 flex justify-between">
-                        <button
-                          type="button"
-                          onClick={() => setCurrentStep(1)}
-                          className="bg-[#EAF4FF] text-[#0B2A5B] border border-[#B9DFFF] hover:bg-sky-100 text-xs font-bold px-5 py-2.5 rounded-xl cursor-pointer transition-all"
-                        >
-                          Volver al Temario
-                        </button>
+                      <div className="pt-4 border-t border-slate-200 flex justify-between"> 
+                        <button 
+                          type="button" 
+                          onClick={() => setCurrentStep(1)} 
+                          className="bg-[#EAF4FF] text-[#0B2A5B] border border-[#B9DFFF] hover:bg-sky-100 text-xs font-bold px-5 py-2.5 rounded-xl cursor-pointer transition-all" 
+                        > 
+                          Volver al Temario 
+                        </button> 
                         
-                        <button
-                          type="button"
-                          onClick={() => setCurrentStep(3)}
-                          className="bg-[#1677D2] hover:bg-[#135fb0] text-xs font-bold text-white px-5 py-2.5 rounded-xl border-none shadow-xs flex items-center gap-2 cursor-pointer transition-all"
-                        >
-                          <span>Siguiente: Configurar</span>
-                          <ChevronRight className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                  )}
+                        <button 
+                          type="button" 
+                          onClick={() => setCurrentStep(3)} 
+                          disabled={!templateBase64 && !templateMeta.hasCustom} 
+                          className={`bg-[#1677D2] hover:bg-[#135fb0] text-xs font-bold text-white px-5 py-2.5 rounded-xl border-none shadow-xs flex items-center gap-2 cursor-pointer transition-all ${ 
+                            (!templateBase64 && !templateMeta.hasCustom) ? "opacity-50 cursor-not-allowed" : "" 
+                          }`} 
+                        > 
+                          <span>Siguiente: Configurar Parámetros</span> 
+                          <ChevronRight className="w-4 h-4" /> 
+                        </button> 
+                      </div> 
+                    </div> 
+                  )} 
 
                   {/* STEP 3: CONFIGURE PARAMETERS */}
                   {currentStep === 3 && (
@@ -1338,149 +1310,98 @@ export default function App() {
               />
             )}
 
-            {/* VIEW TAB 4: MIS PLANTILLAS (Formato de subida e historial) */}
-            {activeTab === "plantillas" && (
-              <div className="max-w-4xl mx-auto space-y-6">
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                  <div>
-                    <h1 className="text-2xl font-bold text-[#0B2A5B]">Mis Plantillas Oficiales</h1>
-                    <p className="text-xs text-[#64748B]">Sube tu propio formato de Word (.docx) para inyectar tus planeaciones respetando tus tablas, logos y color institucional.</p>
-                  </div>
+            {/* VIEW TAB 4: MIS PLANTILLAS (Formato de subida único) */} 
+            {activeTab === "plantillas" && ( 
+              <div className="max-w-4xl mx-auto space-y-6"> 
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"> 
+                  <div> 
+                    <h1 className="text-2xl font-bold text-[#0B2A5B]">Mi Plantilla Institucional</h1> 
+                    <p className="text-xs text-[#64748B]">Gestiona y valida el formato de Word oficial donde se inyectarán de forma controlada todos los planes didácticos.</p> 
+                  </div> 
                   
-                  {templateMeta.hasCustom && (
-                    <button
-                      type="button"
-                      onClick={handleResetTemplate}
-                      className="bg-white hover:bg-red-50 text-red-600 border border-red-200 px-3.5 py-2 text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer transition-all"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      <span>Restablecer Todo</span>
-                    </button>
-                  )}
-                </div>
+                  {templateMeta.hasCustom && ( 
+                    <button 
+                      type="button" 
+                      onClick={handleResetTemplate} 
+                      className="bg-white hover:bg-rose-50 text-rose-600 border border-rose-200 px-3.5 py-2 text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer transition-all" 
+                    > 
+                      <Trash2 className="w-3.5 h-3.5" /> 
+                      <span>Limpiar Formato</span> 
+                    </button> 
+                  )} 
+                </div> 
 
-                {/* Status messages for custom template uploads */}
-                {templateMsg && (
-                  <div className="bg-[#EAFBF0] border border-[#22C55E]/30 text-[#1E7E34] text-xs p-4 rounded-xl flex items-start gap-2">
-                    <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
-                    <p className="font-medium">{templateMsg}</p>
-                  </div>
-                )}
-                {templateError && (
-                  <div className="bg-red-50 border border-red-200 text-red-700 text-xs p-4 rounded-xl flex items-start gap-2">
-                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                    <p className="font-medium">{templateError}</p>
-                  </div>
-                )}
+                {templateMsg && ( 
+                  <div className="bg-[#EAFBF0] border border-[#22C55E]/30 text-[#1E7E34] text-xs p-4 rounded-xl flex items-start gap-2"> 
+                    <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" /> 
+                    <p className="font-medium">{templateMsg}</p> 
+                  </div> 
+                )} 
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* Default institutional template */}
-                  <div className={`p-6 rounded-2xl bg-white border transition-all relative ${!templateMeta.hasCustom ? "border-2 border-[#27C7B8] shadow-sm" : "border-[#D9E2EC] opacity-60"}`}>
-                    {!templateMeta.hasCustom && (
-                      <span className="absolute top-4 right-4 bg-[#EAFBF0] text-[#22C55E] text-[9px] font-extrabold px-2 py-0.5 rounded-full border border-[#22C55E]/20">
-                        Activa por Defecto
-                      </span>
-                    )}
-                    {templateMeta.hasCustom && (
-                      <span className="absolute top-4 right-4 bg-[#F0F4F8] text-[#627D98] text-[9px] font-bold px-2 py-0.5 rounded-full border border-[#D9E2EC]">
-                        Inactiva
-                      </span>
-                    )}
+                {/* Tarjeta de información única del formato en RAM */} 
+                <div className={`p-6 rounded-2xl bg-white border transition-all relative ${templateMeta.hasCustom ? "border-2 border-[#27C7B8] shadow-xs" : "border-dashed border-[#D9E2EC] bg-slate-50/50 text-center py-10"}`}> 
+                  {templateMeta.hasCustom ? ( 
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"> 
+                      <div className="flex gap-4 items-center"> 
+                        <div className="w-12 h-12 rounded-xl bg-teal-50 text-[#27C7B8] flex items-center justify-center shrink-0"> 
+                          <FileUp className="w-6 h-6" /> 
+                        </div> 
+                        <div> 
+                          <h3 className="font-bold text-[#0B2A5B] text-base truncate max-w-md">{templateMeta.fileName}</h3> 
+                          <p className="text-xs text-slate-500 mt-0.5">Estructura vinculada en la memoria RAM del servidor de forma segura.</p> 
+                        </div> 
+                      </div> 
+                      <div className="text-right text-xs text-slate-400 font-medium shrink-0"> 
+                        <p>Subido: {templateMeta.uploadedAt ? new Date(templateMeta.uploadedAt).toLocaleDateString() : "Hoy"}</p> 
+                        <p className="font-mono text-slate-600 mt-0.5">{((templateMeta.fileSize || 0) / 1024).toFixed(1)} KB • DOCX Activo</p> 
+                      </div> 
+                    </div> 
+                  ) : ( 
+                    <div className="space-y-2"> 
+                      <div className="w-12 h-12 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto"> 
+                        <Sliders className="w-5 h-5" /> 
+                      </div> 
+                      <h3 className="font-bold text-slate-400 text-sm">Sin plantilla vinculada</h3> 
+                      <p className="text-xs text-slate-400 max-w-sm mx-auto">Por favor, carga el formato .docx de tu institución educativa abajo para poder estructurar y descargar tus materias.</p> 
+                    </div> 
+                  )} 
+                </div> 
+
+                {/* Upload area */} 
+                <div className="bg-white border border-[#D9E2EC] rounded-2xl p-6 shadow-xs"> 
+                  <h3 className="font-bold text-sm text-[#0B2A5B] mb-1">Cargar o actualizar archivo de Word</h3> 
+                  <p className="text-xs text-[#64748B] mb-4"> 
+                    Sube tu formato institucional. El motor escaneará las tablas y párrafos para incrustar el contenido académico respetando el 100% de tu diseño visual. 
+                  </p> 
+
+                  <div className="border-2 border-dashed border-[#D9E2EC] bg-[#F7FAFC] hover:bg-[#F0F4F8] transition-all rounded-xl p-8 text-center relative cursor-pointer group"> 
+                    <input 
+                      type="file" 
+                      accept=".docx" 
+                      onChange={handleTemplateUpload} 
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" 
+                    /> 
                     
-                    <div className="w-10 h-10 rounded-xl bg-[#EAF4FF] text-[#1677D2] flex items-center justify-center mb-4">
-                      <FileText className="w-5 h-5" />
-                    </div>
-                    <h3 className="font-bold text-[#0B2A5B] text-sm">Formato Original Planly</h3>
-                    <p className="text-xs text-slate-500 mt-1">Esquema oficial de 14 sesiones con desglose diario y matriz de criterios de evaluación.</p>
-                    
-                    <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
-                      <span>Uso: Formato de respaldo</span>
-                      <span className="text-slate-600 font-mono">1.2 MB • DOCX</span>
-                    </div>
-
-                    {templateMeta.hasCustom && (
-                      <button
-                        onClick={handleResetTemplate}
-                        className="mt-3.5 w-full bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold py-2 rounded-lg cursor-pointer transition-all"
-                      >
-                        Volver a usar formato original
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Personal teacher template (Customized) */}
-                  <div className={`p-6 rounded-2xl bg-white border transition-all relative ${templateMeta.hasCustom ? "border-2 border-[#27C7B8] shadow-sm" : "border-dashed border-[#D9E2EC] bg-slate-50/50"}`}>
-                    {templateMeta.hasCustom ? (
-                      <>
-                        <span className="absolute top-4 right-4 bg-[#EAFBF0] text-[#22C55E] text-[9px] font-extrabold px-2 py-0.5 rounded-full border border-[#22C55E]/20 flex items-center gap-1">
-                          <Check className="w-2.5 h-2.5" /> Activa
-                        </span>
-                        <div className="w-10 h-10 rounded-xl bg-teal-50 text-[#27C7B8] flex items-center justify-center mb-4">
-                          <FileUp className="w-5 h-5" />
-                        </div>
-                        <h3 className="font-bold text-[#0B2A5B] text-sm truncate max-w-[200px]" title={templateMeta.fileName}>
-                          {templateMeta.fileName}
-                        </h3>
-                        <p className="text-xs text-slate-500 mt-1">Plantilla institucional cargada con éxito. Listo para inyectar contenido con OpenXML.</p>
-                        
-                        <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
-                          <span>Subido: {templateMeta.uploadedAt ? new Date(templateMeta.uploadedAt).toLocaleDateString() : "Hoy"}</span>
-                          <span className="text-slate-600 font-mono">{( (templateMeta.fileSize || 0) / 1024 ).toFixed(1)} KB • DOCX</span>
-                        </div>
-                      </>
-                    ) : (
-                      <div className="h-full flex flex-col justify-between">
-                        <div>
-                          <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-400 flex items-center justify-center mb-4">
-                            <Sliders className="w-5 h-5" />
-                          </div>
-                          <h3 className="font-bold text-slate-400 text-sm">Tu propia plantilla (.docx)</h3>
-                          <p className="text-xs text-slate-400 mt-1">Aún no has cargado un formato personalizado. Se utiliza la plantilla predeterminada.</p>
-                        </div>
-                        
-                        <div className="pt-4 border-t border-dashed border-slate-200 mt-4 text-[11px] text-slate-400">
-                          Ningún formato personalizado activo
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Upload drag drop placeholder */}
-                <div className="bg-white border border-[#D9E2EC] rounded-2xl p-6 shadow-xs">
-                  <h3 className="font-bold text-sm text-[#0B2A5B] mb-1">Cargar nueva plantilla institucional</h3>
-                  <p className="text-xs text-[#64748B] mb-4">
-                    Sube un documento de Microsoft Word (.docx). Para que Planly inyecte la información correctamente, tu documento puede incluir etiquetas como <code className="bg-slate-100 px-1 py-0.5 rounded font-mono text-[#0B2A5B] font-bold text-[10px]">{`{materia}`}</code>, <code className="bg-slate-100 px-1 py-0.5 rounded font-mono text-[#0B2A5B] font-bold text-[10px]">{`{examen_pct}`}</code>, <code className="bg-slate-100 px-1 py-0.5 rounded font-mono text-[#0B2A5B] font-bold text-[10px]">{`{continua_pct}`}</code>, y un bloque repetitivo para las sesiones como <code className="bg-slate-100 px-1 py-0.5 rounded font-mono text-[#0B2A5B] font-bold text-[10px]">{`{#sesiones}...{/sesiones}`}</code>.
-                  </p>
-
-                  <div className="border-2 border-dashed border-[#D9E2EC] bg-[#F7FAFC] hover:bg-[#F0F4F8] transition-all rounded-xl p-8 text-center relative cursor-pointer group">
-                    <input
-                      type="file"
-                      accept=".docx"
-                      onChange={handleTemplateUpload}
-                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                    />
-                    
-                    {uploadingTemplate ? (
-                      <div className="space-y-3">
-                        <Loader2 className="w-8 h-8 text-[#1677D2] animate-spin mx-auto" />
-                        <span className="font-bold text-xs text-[#0B2A5B] block">Procesando y guardando plantilla...</span>
-                      </div>
-                    ) : (
-                      <div className="space-y-3">
-                        <div className="w-12 h-12 rounded-full bg-white flex items-center justify-center mx-auto text-[#1677D2] border border-slate-200 group-hover:scale-105 transition-transform shadow-xs">
-                          <FileUp className="w-5 h-5" />
-                        </div>
-                        <div className="space-y-1">
-                          <span className="font-bold text-xs text-[#0B2A5B] block">Haz clic o arrastra tu archivo .docx aquí</span>
-                          <span className="text-[10px] text-slate-400 block">Soporta formatos Word .docx de hasta 10 MB</span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
+                    {uploadingTemplate ? ( 
+                      <div className="space-y-3"> 
+                        <Loader2 className="w-8 h-8 text-[#1677D2] animate-spin mx-auto" /> 
+                        <span className="font-bold text-xs text-[#0B2A5B] block">Indexando estructuras de Word (.docx)...</span> 
+                      </div> 
+                    ) : ( 
+                      <div className="space-y-3"> 
+                        <div className="w-12 h-12 rounded-full bg-white flex items-center justify-center mx-auto text-[#1677D2] border border-slate-200 group-hover:scale-105 transition-transform shadow-xs"> 
+                          <FileUp className="w-5 h-5" /> 
+                        </div> 
+                        <div className="space-y-1"> 
+                          <span className="font-bold text-xs text-[#0B2A5B] block">Haz clic o arrastra tu archivo .docx aquí</span> 
+                          <span className="text-[10px] text-slate-400 block">Soporta formatos oficiales de Word de hasta 10 MB</span> 
+                        </div> 
+                      </div> 
+                    )} 
+                  </div> 
+                </div> 
+              </div> 
+            )} 
 
             {/* VIEW TAB 5: HISTORIAL TEMARIOS */}
             {activeTab === "temarios" && (
