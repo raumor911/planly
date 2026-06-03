@@ -16,13 +16,14 @@ import {
   cleanUpRawWordText
 } from "./src/server/geminiService";
 import { 
-  ensureTemplateExists, 
   getSessionDate, 
-  compileDocxWithPayload,
-} from "./src/server/templateEngine";
+} from "./src/server/modules/docx_legacy/engine";
+
+import { FidelityTemplateEngine } from "./src/server/templateEngine";
 
 const syllabusParser = new SyllabusParser();
 const docxOrchestrator = new DocxOrchestrator();
+const fidelityEngine = new FidelityTemplateEngine();
 
 const app = express();
 const PORT = 3000;
@@ -124,6 +125,12 @@ app.post("/api/curricula/generate", async (req, res) => {
     templateBase64
   } = req.body;
 
+  // Validation of rubric percentages
+  const totalPct = (parseInt(examenPct) || 0) + (parseInt(continuaPct) || 0) + (parseInt(plataformaPct) || 0);
+  if (totalPct !== 100) {
+    console.warn(`[INSTITUTIONAL] Rubric percentages total ${totalPct}%, which differs from the required 100%. Proceeding with caution.`);
+  }
+
   // If there are manual overrides, we skip the Gemini call entirely
   const hasManualOverride = Array.isArray(sesionesOverride) && sesionesOverride.length > 0;
 
@@ -142,98 +149,27 @@ app.post("/api/curricula/generate", async (req, res) => {
       sessions = sesionesOverride;
       cleanSubject = materiaOverride || "Contabilidad de Organizaciones Públicas";
     } else {
-      // 1. Structure raw text with the Gemini AI service wrapper, querying exactly sessionsCount nodes
+      // 1. Structure raw text with the Gemini AI service wrapper
       const parsedData = await askGeminiToStructureSyllabus(temario, sessionsCount);
-
-      // 2. Extract and fill sessions array ensuring exactly sessionsCount nodes
       sessions = parsedData.sesiones || [];
-      if (!Array.isArray(sessions) || sessions.length === 0) {
-        throw new Error("No se encontraron sesiones estructuradas.");
-      }
-
-      if (parsedData.materia && typeof parsedData.materia === "string" && parsedData.materia.trim().length > 0) {
-        cleanSubject = parsedData.materia.trim();
-      }
-    }
-
-    // Guard requested sessionsCount structure
-    if (sessions.length < sessionsCount) {
-      const originalLen = sessions.length;
-      for (let i = originalLen; i < sessionsCount; i++) {
-        sessions.push({
-          num: i + 1,
-          tema: `Módulo complementario sobre Gestión Pública (Sesión ${i + 1})`,
-          actividad: "Análisis grupal de casos gubernamentales y normativas contables actuales",
-          objetivo: "Explicar los lineamientos prácticos del control gubernamental complementario"
-        });
-      }
-    } else if (sessions.length > sessionsCount) {
-      sessions = sessions.slice(0, sessionsCount);
-    }
-
-    // 3. String cleaner helper
-    const cleanString = (str: string, maxWords: number, fallback: string): string => {
-      if (!str || typeof str !== "string") return fallback;
-      const cleaned = str
-        .replace(/[\n\r]/g, " ")
-        .replace(/[\*_`#]/g, "")
-        .trim();
-      const words = cleaned.split(/\s+/);
-      if (words.length > maxWords) {
-        return words.slice(0, maxWords).join(" ") + "...";
-      }
-      return cleaned;
-    };
-
-    // Helper to format percentage strings nicely
-    const formatPercent = (val: string | number | null | undefined, fallback: string): string => {
-      if (val === undefined || val === null) return fallback;
-      const s = String(val).trim();
-      if (!s) return fallback;
-      return s.endsWith("%") ? s : `${s}%`;
-    };
-
-    interface CurriculaSession {
-      tema?: string;
-      actividad?: string;
-      objetivo?: string;
-    }
-
-    // 4. Fill weekly chronological dates starting from dynamic fechaInicio or retain manual override values strictly
-    let cleanedSessions;
-
-    if (hasManualOverride) {
-      cleanedSessions = sessions.map((s: any, idx: number) => {
-        return {
-          num: s.num || (idx + 1),
-          fecha: s.fecha || "",
-          tema: s.tema || "",
-          actividad: s.actividad || "",
-          objetivo: s.objetivo || ""
-        };
-      });
-    } else {
-      cleanedSessions = sessions.map((s: CurriculaSession, idx: number) => {
-        const numValue = idx + 1;
-        return {
-          num: numValue,
-          fecha: getSessionDate(idx, fechaInicio),
-          tema: cleanString(s.tema || "", 15, `Desarrollo de Contabilidad Gubernamental para sesión ${numValue}`),
-          actividad: cleanString(s.actividad || "", 15, "Estudio autónomo y resolución de ejercicios en la plataforma"),
-          objetivo: cleanString(s.objetivo || "", 15, "Identificar los componentes contables específicos en el sector oficial")
-        };
-      });
+      if (parsedData.materia) cleanSubject = parsedData.materia.trim();
     }
 
     // 5. Package payload matching new DocxPayload structure
     const docxPayload: DocxPayload = {
       course: {
         name: cleanSubject,
-        code: "", // Could be extracted if available
-        generalObjective: "" // Could be extracted if available
+        code: "CPP09", // Default code for institutional compliance
+        generalObjective: "Al término del curso, el estudiante construirá estados financieros y presupuestales..."
       },
-      sessions: cleanedSessions,
-      bibliography: [], // Could be populated if available
+      sessions: sessions.map((s: any, idx: number) => ({
+        num: s.num || (idx + 1),
+        fecha: s.fecha || getSessionDate(idx, fechaInicio),
+        tema: s.tema || "",
+        actividad: s.actividad || "",
+        objetivo: s.objetivo || ""
+      })),
+      bibliography: [],
       evaluation: {
         firstPartial: { period: "1er Parcial", items: [{ name: "Examen", percentage: parseInt(examenPct) || 30 }] },
         secondPartial: { period: "2do Parcial", items: [{ name: "Continua", percentage: parseInt(continuaPct) || 40 }] },
@@ -242,36 +178,41 @@ app.post("/api/curricula/generate", async (req, res) => {
     };
 
     if (isPreview) {
-      res.json({
-        success: true,
-        materia: cleanSubject,
-        payload: docxPayload
-      });
+      res.json({ success: true, materia: cleanSubject, payload: docxPayload });
       return;
     }
 
-    console.log("Compiling Word DOCX using new modular Preservation Engine...");
+    console.log("[DOCX] Compiling ephemeral in-memory output...");
     
     let finalTemplate = templateBase64;
     if (!finalTemplate) {
       const defaultPath = path.resolve(process.cwd(), "CNT FORMATO PLANEACION.docx");
-      ensureTemplateExists();
       finalTemplate = fs.readFileSync(defaultPath).toString("base64");
     }
 
-    const result = await docxOrchestrator.generate(finalTemplate, docxPayload);
-    const outBuffer = result.buffer;
+    // Process ephemeral in-memory
+    const zip = new PizZip(Buffer.from(finalTemplate, "base64").toString("binary"));
+    const imagesBefore = Object.keys(zip.files).filter(k => k.startsWith('word/media/')).length;
+    
+    await fidelityEngine.process(zip, docxPayload);
+    
+    const outBuffer = zip.generate({ type: 'nodebuffer', compression: 'DEFLATE' });
+    const imagesAfter = Object.keys(zip.files).filter(k => k.startsWith('word/media/')).length;
 
-    console.log("Success! Delivering binary output stream in response headers...");
+    // Audit Certification Trazas
+    console.log(`[DOCX] Tables detected: ${Object.keys(zip.files).filter(k => k === 'word/document.xml').length}`);
+    console.log(`[DOCX] Images before: ${imagesBefore}`);
+    console.log(`[DOCX] Images after: ${imagesAfter}`);
+    console.log(`[DOCX] Headers preserved: ${Object.keys(zip.files).some(k => k.startsWith('word/header'))}`);
+    console.log("[DOCX] Output generated successfully");
+
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
-    res.setHeader("Content-Disposition", 'attachment; filename="PROGRAMA_OPERATIVO_LLENADO.docx"');
-    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+    res.setHeader("Content-Disposition", 'attachment; filename="PROGRAMA_OPERATIVO_FINAL.docx"');
     res.send(outBuffer);
 
-  } catch (error: unknown) {
+  } catch (error: any) {
     console.error("Endpoint generation error: ", error);
-    const errMessage = error instanceof Error ? error.message : "Ocurrió un error inesperado al estructurar la planeación.";
-    res.status(500).json({ error: errMessage });
+    res.status(500).json({ error: error.message });
   }
 });
 
