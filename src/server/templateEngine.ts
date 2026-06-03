@@ -139,11 +139,11 @@ export class FidelityTemplateEngine {
 
     const dataRowXml = rows[1];
     
-    // 1. Recuperar arreglo estructurado de celdas
+    // 1. Extraer el arreglo estructurado de celdas
     const cells = dataRowXml.match(/<w:tc[\s\S]*?<\/w:tc>/g) || [];
     if (cells.length === 0) return xml;
 
-    // 2. Mapear individualmente cada celda en aislamiento
+    // 2. Mapear cada celda de forma aislada depositando marcadores correspondientes
     const updatedCells = cells.map((cellXml, cIdx) => {
       let token = '';
       switch (cIdx) {
@@ -154,25 +154,20 @@ export class FidelityTemplateEngine {
         default: token = '{objetivo}'; break;
       }
 
-      // 3. Remata con {/sesiones} después del token de la última columna
+      // Envolver perimetralmente los extremos con {#sesiones} y {/sesiones}
+      if (cIdx === 0) {
+        token = `{#sesiones}${token}`;
+      }
       if (cIdx === cells.length - 1) {
         token = `${token}{/sesiones}`;
       }
 
-      // 4. Reemplazo limpio usando regex únicamente sobre el tag <w:t>
-      let updatedCell = cellXml.replace(/(<w:t[^>]*>)([\s\S]*?)(<\/w:t>)/, `$1${token}$3`);
-
-      // 3. Agrega perimetralmente {#sesiones} antes de la primera celda útil
-      if (cIdx === 0) {
-        updatedCell = '{#sesiones}' + updatedCell;
-      }
-
-      return updatedCell;
+      // Reemplazar únicamente el contenido de <w:t> sin alterar propiedades de la celda
+      return cellXml.replace(/(<w:t[^>]*>)([\s\S]*?)(<\/w:t>)/, `$1${token}$3`);
     });
 
-    // 5. Reensamblar updatedRowXml
-    let cellIdx = 0;
-    const updatedRowXml = dataRowXml.replace(/<w:tc[\s\S]*?<\/w:tc>/g, () => updatedCells[cellIdx++] || '');
+    // 3. Reensamblar updatedRowXml e inyectarlo de vuelta
+    const updatedRowXml = dataRowXml.replace(/<w:tc[\s\S]*?<\/w:tc>/g, () => updatedCells.shift() || '');
     
     const updatedTableXml = tableXml.replace(rows[1], updatedRowXml);
     return xml.replace(tables[selectedTableIdx], updatedTableXml);
