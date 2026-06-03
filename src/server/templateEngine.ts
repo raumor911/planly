@@ -1,7 +1,16 @@
 import { XMLParser, XMLBuilder } from 'fast-xml-parser';
 import PizZip from 'pizzip';
-import { DocxPayload, TableMatch, DocxSession } from './types';
-import { TemplateInspector } from './inspector';
+import { DocxPayload, TableMatch, DocxSession } from './modules/docx/types';
+import { TemplateInspector } from './modules/docx/inspector';
+
+export interface AuditLog {
+  tablesDetected: number;
+  tableSelected: number;
+  baseRowCells: number;
+  imagesBefore: number;
+  imagesAfter: number;
+  headersPreserved: boolean;
+}
 
 export class FidelityTemplateEngine {
   private parser: XMLParser;
@@ -14,84 +23,77 @@ export class FidelityTemplateEngine {
       preserveOrder: true,
       parseAttributeValue: true,
       trimValues: false,
+      attributeNamePrefix: "@_",
     };
     this.parser = new XMLParser(commonOptions);
-    this.builder = new XMLBuilder(commonOptions);
+    this.builder = new XMLBuilder({
+      ...commonOptions,
+      format: false, // Word prefers compact XML
+    });
     this.inspector = new TemplateInspector();
   }
 
-  public async process(zip: PizZip, payload: DocxPayload): Promise<PizZip> {
+  public async process(zip: PizZip, payload: DocxPayload): Promise<AuditLog> {
     const fileKeys = Object.keys(zip.files);
+    const audit: AuditLog = {
+      tablesDetected: 0,
+      tableSelected: -1,
+      baseRowCells: 0,
+      imagesBefore: fileKeys.filter(k => k.startsWith('word/media/')).length,
+      imagesAfter: 0,
+      headersPreserved: fileKeys.some(k => k.startsWith('word/header')),
+    };
     
-    // Audit Logs - Before
-    const imagesBefore = fileKeys.filter(k => k.startsWith('word/media/')).length;
-    const hasHeadersBefore = fileKeys.some(k => k.startsWith('word/header'));
-    
-    // In-memory process
     for (const key of fileKeys) {
       if (key === 'word/document.xml' || key.startsWith('word/header') || key.startsWith('word/footer')) {
-        const xml = zip.file(key).asText();
-        const updatedXml = this.processXml(xml, payload, key === 'word/document.xml');
+        const file = zip.file(key);
+        if (!file) continue;
+        
+        const xml = file.asText();
+        // Preserve XML declaration
+        const declaration = xml.match(/^<\?xml.*?\?>/)?.[0] || '';
+        
+        const jsonObj = this.parser.parse(xml);
+        
+        if (key === 'word/document.xml') {
+          // 1. Passive Tagging
+          this.autoTagDocumentXml(jsonObj, payload);
+          // 2. Table Injection
+          this.injectTables(jsonObj, payload, audit);
+        } else {
+          this.autoTagDocumentXml(jsonObj, payload);
+        }
+
+        const updatedXml = declaration + this.builder.build(jsonObj);
         zip.file(key, updatedXml);
       }
     }
 
-    // Audit Logs - After
-    const imagesAfter = Object.keys(zip.files).filter(k => k.startsWith('word/media/')).length;
-    
-    // Final Audit Output
-    // These will be called from server.ts to match the specific audit format requested
-    return zip;
+    audit.imagesAfter = Object.keys(zip.files).filter(k => k.startsWith('word/media/')).length;
+    return audit;
   }
 
-  private processXml(xml: string, payload: DocxPayload, isMainDoc: boolean): string {
-    const jsonObj = this.parser.parse(xml);
-    
-    // 1. Passive Tagging (Firewall de Fidelidad Visual)
-    this.autoTagDocumentXml(jsonObj, payload);
+  private autoTagDocumentXml(node: any[], payload: DocxPayload): void {
+    if (!node || !Array.isArray(node)) return;
 
-    // 2. Matrix Scoring & Table Injection
-    if (isMainDoc) {
-      this.injectTables(jsonObj, payload);
-    }
-
-    return this.builder.build(jsonObj);
-  }
-
-  private autoTagDocumentXml(node: any, payload: DocxPayload): void {
-    if (!node) return;
-
-    if (Array.isArray(node)) {
-      node.forEach(item => this.autoTagDocumentXml(item, payload));
-    } else if (typeof node === 'object') {
-      Object.keys(node).forEach(key => {
+    node.forEach(item => {
+      const keys = Object.keys(item);
+      keys.forEach(key => {
         if (key === 'w:t') {
-          const tNode = node[key];
-          if (Array.isArray(tNode)) {
-            tNode.forEach(t => this.applyPassiveReplacement(t, payload));
-          } else {
-            this.applyPassiveReplacement(tNode, payload);
-          }
-        } else if (typeof node[key] === 'object') {
-          this.autoTagDocumentXml(node[key], payload);
+          this.applyPassiveReplacement(item[key], payload);
+        } else if (typeof item[key] === 'object') {
+          this.autoTagDocumentXml(item[key], payload);
         }
       });
-    }
+    });
   }
 
   private applyPassiveReplacement(tNode: any, payload: DocxPayload): void {
-    let textObj: any = null;
-    if (Array.isArray(tNode)) {
-      textObj = tNode.find(item => item['#text'] !== undefined);
-    } else if (typeof tNode === 'object' && tNode['#text'] !== undefined) {
-      textObj = tNode;
-    }
-
+    const textObj = Array.isArray(tNode) ? tNode.find(item => item['#text'] !== undefined) : tNode;
     if (!textObj || typeof textObj['#text'] !== 'string') return;
 
     let text = textObj['#text'];
 
-    // Dictionary of synonyms and markers
     const dictionary = [
       { regex: /\{materia\}|([Mm]ateria|[Aa]signatura|[Cc]urso)\s*:\s*([_.\-\s]*)$/i, value: payload.course.name },
       { regex: /\{objetivo_general\}|([Oo]bjetivo\s+[Gg]eneral)\s*:\s*([_.\-\s]*)$/i, value: payload.course.generalObjective },
@@ -103,11 +105,9 @@ export class FidelityTemplateEngine {
     dictionary.forEach(entry => {
       if (entry.regex.test(text)) {
         if (text.includes('{')) {
-          // Placeholder direct replacement
           text = text.replace(entry.regex, entry.value || '');
         } else {
-          // Passive heuristic replacement (keeping the label)
-          text = text.replace(entry.regex, (match, p1) => `${p1}: ${entry.value}`);
+          text = text.replace(entry.regex, (_match, p1) => `${p1}: ${entry.value}`);
         }
       }
     });
@@ -115,39 +115,29 @@ export class FidelityTemplateEngine {
     textObj['#text'] = text;
   }
 
-  private injectTables(jsonObj: any, payload: DocxPayload): void {
+  private injectTables(jsonObj: any[], payload: DocxPayload, audit: AuditLog): void {
     const xmlForAnalysis = this.builder.build(jsonObj);
     const analysis = this.inspector.analyzeDocument(xmlForAnalysis);
-    const tables = this.findAllNodes(jsonObj, 'w:tbl');
+    audit.tablesDetected = analysis.tables.length;
 
-    // Implementation of Matrix Scoring Algorithm (Matches >= 4)
-    // We look for the sessions table specifically
     const winningMatch = analysis.tables
       .filter(m => m.type === 'sessions' && (m.confidence * 5) >= 4)
       .sort((a, b) => b.confidence - a.confidence)[0];
 
-    if (!winningMatch) {
-      console.warn('[DOCX] No planning table found with matrix score >= 4');
-      return;
-    }
+    if (!winningMatch) return;
 
-    console.log(`[DOCX] Planning table selected: index ${winningMatch.tableIndex}`);
+    audit.tableSelected = winningMatch.tableIndex;
+    const tables = this.findAllNodes(jsonObj, 'w:tbl');
     const targetTable = tables[winningMatch.tableIndex];
     if (!targetTable) return;
 
     const rows = this.findAllNodes(targetTable, 'w:tr');
-    
-    // Safety check for prototype row
     const prototypeRowIdx = winningMatch.headerRowIndex + 1;
-    if (prototypeRowIdx >= rows.length) {
-      console.warn('[DOCX] Table found but no empty row exists after header for cloning.');
-      return;
-    }
-    
-    const prototypeRow = rows[prototypeRowIdx];
-    if (!prototypeRow) return;
+    if (prototypeRowIdx >= rows.length) return;
 
-    // Tag loop markers strictly within native <w:t> nodes
+    const prototypeRow = rows[prototypeRowIdx];
+    audit.baseRowCells = this.findAllNodes(prototypeRow, 'w:tc').length;
+
     this.tagLoopMarkers(prototypeRow, winningMatch.roles);
 
     const newRows = payload.sessions.map(session => {
@@ -159,25 +149,19 @@ export class FidelityTemplateEngine {
     this.replaceRowsInTable(targetTable, winningMatch.headerRowIndex, newRows);
   }
 
-  private tagLoopMarkers(row: any, roles: any): void {
+  private tagLoopMarkers(row: any, roles: Record<number, string>): void {
     const cells = this.findAllNodes(row, 'w:tc');
     const colIndices = Object.keys(roles).map(Number).sort((a, b) => a - b);
-    
     if (colIndices.length === 0) return;
 
-    const firstColIdx = colIndices[0];
-    const lastColIdx = colIndices[colIndices.length - 1];
-
-    // Safety injection
-    if (cells[firstColIdx]) this.injectMarkerInCell(cells[firstColIdx], '{#sesiones}');
-    if (cells[lastColIdx]) this.injectMarkerInCell(cells[lastColIdx], '{/sesiones}');
+    if (cells[colIndices[0]]) this.injectMarkerInCell(cells[colIndices[0]], '{#sesiones}');
+    if (cells[colIndices[colIndices.length - 1]]) this.injectMarkerInCell(cells[colIndices[colIndices.length - 1]], '{/sesiones}');
   }
 
   private injectMarkerInCell(cell: any, marker: string): void {
     const tNodes = this.findAllNodes(cell, 'w:t');
     if (tNodes.length > 0) {
       const firstT = tNodes[0];
-      // In fast-xml-parser with preserveOrder, a node can be an array or an object
       const textObj = Array.isArray(firstT) ? firstT.find(i => i['#text'] !== undefined) : firstT;
       if (textObj && typeof textObj['#text'] === 'string') {
         textObj['#text'] = marker + textObj['#text'];
@@ -185,7 +169,6 @@ export class FidelityTemplateEngine {
         textObj['#text'] = marker;
       }
     } else {
-      // If no w:t, we try to find a run w:r to add it
       const rNodes = this.findAllNodes(cell, 'w:r');
       if (rNodes.length > 0) {
         const firstR = rNodes[0];
@@ -196,14 +179,13 @@ export class FidelityTemplateEngine {
     }
   }
 
-  private fillRowWithSessionData(row: any, session: DocxSession, roles: any): void {
+  private fillRowWithSessionData(row: any, session: DocxSession, roles: Record<number, string>): void {
     const cells = this.findAllNodes(row, 'w:tc');
     Object.keys(roles).forEach(colIdx => {
       const role = roles[Number(colIdx)];
       const cell = cells[Number(colIdx)];
       if (role && cell) {
         let value = String(session[role as keyof DocxSession] || '');
-        // Remove markers if present in the value (they are only for template structure)
         value = value.replace(/\{[#/]sesiones\}/g, '');
         this.setCellText(cell, value);
       }
@@ -215,46 +197,33 @@ export class FidelityTemplateEngine {
     if (tNodes.length > 0) {
       const firstT = tNodes[0];
       const textObj = Array.isArray(firstT) ? firstT.find(i => i['#text'] !== undefined) : firstT;
-      if (textObj) {
-        textObj['#text'] = text;
-      }
-      // Clear others
+      if (textObj) textObj['#text'] = text;
       for (let i = 1; i < tNodes.length; i++) {
         const otherT = tNodes[i];
-        const otherTextObj = Array.isArray(otherT) ? otherT.find(i => i['#text'] !== undefined) : otherT;
+        const otherTextObj = Array.isArray(otherT) ? otherT.find((i: any) => i['#text'] !== undefined) : otherT;
         if (otherTextObj) otherTextObj['#text'] = '';
       }
     }
   }
 
-  private replaceRowsInTable(tbl: any, headerIdx: number, newRows: any[]): void {
+  private replaceRowsInTable(tbl: any[], headerIdx: number, newRows: any[]): void {
     const trIndices: number[] = [];
-    tbl.forEach((node: any, idx: number) => {
-      if (node['w:tr']) trIndices.push(idx);
-    });
-
+    tbl.forEach((node, idx) => { if (node['w:tr']) trIndices.push(idx); });
     if (trIndices.length === 0) return;
 
-    // Delete rows after header
     const rowsToDelete = trIndices.slice(headerIdx + 1).reverse();
     rowsToDelete.forEach(idx => tbl.splice(idx, 1));
 
-    // Re-calculate and Insert
     const currentTrIndices: number[] = [];
-    tbl.forEach((node: any, idx: number) => {
-      if (node['w:tr']) currentTrIndices.push(idx);
-    });
+    tbl.forEach((node, idx) => { if (node['w:tr']) currentTrIndices.push(idx); });
 
     const insertAt = (currentTrIndices[headerIdx] ?? tbl.length - 1) + 1;
-    newRows.forEach((row, i) => {
-      tbl.splice(insertAt + i, 0, { 'w:tr': row });
-    });
+    newRows.forEach((row, i) => tbl.splice(insertAt + i, 0, { 'w:tr': row }));
   }
 
   private findAllNodes(parent: any, name: string): any[] {
     const results: any[] = [];
     if (!parent) return results;
-
     if (Array.isArray(parent)) {
       parent.forEach(item => {
         if (item[name]) results.push(item[name]);

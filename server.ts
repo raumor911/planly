@@ -149,10 +149,19 @@ app.post("/api/curricula/generate", async (req, res) => {
       sessions = sesionesOverride;
       cleanSubject = materiaOverride || "Contabilidad de Organizaciones Públicas";
     } else {
-      // 1. Structure raw text with the Gemini AI service wrapper
-      const parsedData = await askGeminiToStructureSyllabus(temario, sessionsCount);
-      sessions = parsedData.sesiones || [];
-      if (parsedData.materia) cleanSubject = parsedData.materia.trim();
+      // 1. Structure raw text with the new taxonomic SyllabusParser
+      const parsedData = await syllabusParser.parse(temario, sessionsCount);
+
+      // Map taxonomic topics to sessions for the DOCX engine
+      sessions = parsedData.topics.map((topic: any, idx: number) => ({
+        num: idx + 1,
+        fecha: getSessionDate(idx, fechaInicio),
+        tema: topic.title,
+        actividad: parsedData.activities[idx % parsedData.activities.length]?.description || "Análisis de contenido",
+        objetivo: parsedData.course.generalObjective
+      }));
+
+      if (parsedData.course.name) cleanSubject = parsedData.course.name.trim();
     }
 
     // 5. Package payload matching new DocxPayload structure
@@ -195,16 +204,18 @@ app.post("/api/curricula/generate", async (req, res) => {
     const zip = new PizZip(templateBuffer);
     const imagesBefore = Object.keys(zip.files).filter(k => k.startsWith('word/media/')).length;
     
-    await fidelityEngine.process(zip, docxPayload);
+    const audit = await fidelityEngine.process(zip, docxPayload);
     
     const outBuffer = zip.generate({ type: 'nodebuffer', compression: 'DEFLATE' });
     const imagesAfter = Object.keys(zip.files).filter(k => k.startsWith('word/media/')).length;
 
     // Audit Certification Trazas
-    console.log(`[DOCX] Tables detected: ${Object.keys(zip.files).filter(k => k === 'word/document.xml').length}`);
-    console.log(`[DOCX] Images before: ${imagesBefore}`);
-    console.log(`[DOCX] Images after: ${imagesAfter}`);
-    console.log(`[DOCX] Headers preserved: ${Object.keys(zip.files).some(k => k.startsWith('word/header'))}`);
+    console.log(`[DOCX] Tables detected: ${audit.tablesDetected}`);
+    console.log(`[DOCX] Planning table selected: index ${audit.tableSelected}`);
+    console.log(`[DOCX] Base row cells: ${audit.baseRowCells}`);
+    console.log(`[DOCX] Images before: ${audit.imagesBefore}`);
+    console.log(`[DOCX] Images after: ${audit.imagesAfter}`);
+    console.log(`[DOCX] Headers preserved: ${audit.headersPreserved}`);
     console.log("[DOCX] Output generated successfully");
 
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
