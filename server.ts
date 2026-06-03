@@ -191,7 +191,8 @@ app.post("/api/curricula/generate", async (req, res) => {
     }
 
     // Process ephemeral in-memory
-    const zip = new PizZip(Buffer.from(finalTemplate, "base64").toString("binary"));
+    const templateBuffer = Buffer.from(finalTemplate, "base64");
+    const zip = new PizZip(templateBuffer);
     const imagesBefore = Object.keys(zip.files).filter(k => k.startsWith('word/media/')).length;
     
     await fidelityEngine.process(zip, docxPayload);

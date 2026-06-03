@@ -116,12 +116,14 @@ export class FidelityTemplateEngine {
   }
 
   private injectTables(jsonObj: any, payload: DocxPayload): void {
-    const analysis = this.inspector.analyzeDocument(this.builder.build(jsonObj));
+    const xmlForAnalysis = this.builder.build(jsonObj);
+    const analysis = this.inspector.analyzeDocument(xmlForAnalysis);
     const tables = this.findAllNodes(jsonObj, 'w:tbl');
 
     // Implementation of Matrix Scoring Algorithm (Matches >= 4)
+    // We look for the sessions table specifically
     const winningMatch = analysis.tables
-      .filter(m => m.type === 'sessions' && m.confidence * 5 >= 4) // Confidence is count/5
+      .filter(m => m.type === 'sessions' && (m.confidence * 5) >= 4)
       .sort((a, b) => b.confidence - a.confidence)[0];
 
     if (!winningMatch) {
@@ -134,9 +136,15 @@ export class FidelityTemplateEngine {
     if (!targetTable) return;
 
     const rows = this.findAllNodes(targetTable, 'w:tr');
+    
+    // Safety check for prototype row
     const prototypeRowIdx = winningMatch.headerRowIndex + 1;
+    if (prototypeRowIdx >= rows.length) {
+      console.warn('[DOCX] Table found but no empty row exists after header for cloning.');
+      return;
+    }
+    
     const prototypeRow = rows[prototypeRowIdx];
-
     if (!prototypeRow) return;
 
     // Tag loop markers strictly within native <w:t> nodes
@@ -160,18 +168,30 @@ export class FidelityTemplateEngine {
     const firstColIdx = colIndices[0];
     const lastColIdx = colIndices[colIndices.length - 1];
 
-    // Inject markers inside w:t
-    this.injectMarkerInCell(cells[firstColIdx], '{#sesiones}');
-    this.injectMarkerInCell(cells[lastColIdx], '{/sesiones}');
+    // Safety injection
+    if (cells[firstColIdx]) this.injectMarkerInCell(cells[firstColIdx], '{#sesiones}');
+    if (cells[lastColIdx]) this.injectMarkerInCell(cells[lastColIdx], '{/sesiones}');
   }
 
   private injectMarkerInCell(cell: any, marker: string): void {
     const tNodes = this.findAllNodes(cell, 'w:t');
     if (tNodes.length > 0) {
       const firstT = tNodes[0];
+      // In fast-xml-parser with preserveOrder, a node can be an array or an object
       const textObj = Array.isArray(firstT) ? firstT.find(i => i['#text'] !== undefined) : firstT;
       if (textObj && typeof textObj['#text'] === 'string') {
         textObj['#text'] = marker + textObj['#text'];
+      } else if (textObj && typeof textObj === 'object') {
+        textObj['#text'] = marker;
+      }
+    } else {
+      // If no w:t, we try to find a run w:r to add it
+      const rNodes = this.findAllNodes(cell, 'w:r');
+      if (rNodes.length > 0) {
+        const firstR = rNodes[0];
+        if (Array.isArray(firstR)) {
+          firstR.push({ 'w:t': [{ '#text': marker }] });
+        }
       }
     }
   }
