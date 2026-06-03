@@ -37,9 +37,6 @@ export function SidebarMenu({ activeTab, setActiveTab, appName }: SidebarMenuPro
           <div className="w-full h-11 px-1">
             <PlanlyLogo variant="negative" className="w-full h-full" />
           </div>
-          <span className="text-[10px] text-[#27C7B8] font-bold tracking-wider mt-1.5 uppercase">
-            Un producto más de RAUVIA
-          </span>
         </div>
 
         {/* NAVIGATION LINKS */}
@@ -82,7 +79,7 @@ export function SidebarMenu({ activeTab, setActiveTab, appName }: SidebarMenuPro
       <div className="p-4 m-4 rounded-xl bg-white/5 border border-white/10 text-xs text-center">
         <div className="text-[11px] text-[#BFD7F5]/70 leading-relaxed">
           Una solución tecnológica de <br />
-          <span className="text-[#27C7B8] font-bold">RAUVIA</span>
+          <span className="text-[#27C7B8] font-bold">RAUVIA Consulting</span>
         </div>
       </div>
     </aside>

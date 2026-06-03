@@ -1,3 +1,4 @@
+import "dotenv/config";
 import express from "express";
 import path from "path";
 import fs from "fs";
@@ -6,6 +7,9 @@ import PizZip from "pizzip";
 import Docxtemplater from "docxtemplater";
 import { createServer as createViteServer } from "vite";
 import mammoth from "mammoth";
+import { SyllabusParser } from "./src/server/modules/parser/syllabus";
+import { DocxOrchestrator } from "./src/server/modules/docx/orchestrator";
+import { DocxPayload } from "./src/server/modules/docx/types";
 import { 
   askGeminiToStructureSyllabus,
   extractSyllabusFromPdf,
@@ -15,8 +19,10 @@ import {
   ensureTemplateExists, 
   getSessionDate, 
   compileDocxWithPayload,
-  autoTagDocumentXml
 } from "./src/server/templateEngine";
+
+const syllabusParser = new SyllabusParser();
+const docxOrchestrator = new DocxOrchestrator();
 
 const app = express();
 const PORT = 3000;
@@ -25,10 +31,32 @@ const PORT = 3000;
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
-// Make sure the base document template is loaded on initialization
-ensureTemplateExists();
+// --- NEW MODULAR ENDPOINTS ---
 
-// Endpoint to extract plain text from uploaded Word (.docx) or PDF (.pdf) and structure it via Gemini
+app.post("/api/projects/:id/parse-syllabus", async (req, res) => {
+  const { text, numWeeks } = req.body;
+  try {
+    const payload = await syllabusParser.parse(text, numWeeks);
+    res.json(payload);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/projects/:id/render-docx", async (req, res) => {
+  const { templateBase64, payload } = req.body;
+  try {
+    const result = await docxOrchestrator.generate(templateBase64, payload);
+    
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+    res.setHeader("Content-Disposition", 'attachment; filename="PLAN_DOCENTE.docx"');
+    res.send(result.buffer);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// --- LEGACY ENDPOINTS ---
 app.post("/api/curricula/extract-text", async (req, res) => {
   const { fileBase64, mimeType, fileName } = req.body;
 
@@ -197,27 +225,42 @@ app.post("/api/curricula/generate", async (req, res) => {
       });
     }
 
-    // 5. Package payload matching original template exactly
-    const wordPayload = {
-      materia: cleanSubject,
-      examen_pct: formatPercent(examenPct, "30%"),
-      continua_pct: formatPercent(continuaPct, "40%"),
-      plataforma_pct: formatPercent(plataformaPct, "30%"),
-      exposicion_pct: formatPercent(exposicionPct, "15%"),
-      sesiones: cleanedSessions
+    // 5. Package payload matching new DocxPayload structure
+    const docxPayload: DocxPayload = {
+      course: {
+        name: cleanSubject,
+        code: "", // Could be extracted if available
+        generalObjective: "" // Could be extracted if available
+      },
+      sessions: cleanedSessions,
+      bibliography: [], // Could be populated if available
+      evaluation: {
+        firstPartial: { period: "1er Parcial", items: [{ name: "Examen", percentage: parseInt(examenPct) || 30 }] },
+        secondPartial: { period: "2do Parcial", items: [{ name: "Continua", percentage: parseInt(continuaPct) || 40 }] },
+        final: { period: "Final", items: [{ name: "Proyecto", percentage: parseInt(plataformaPct) || 30 }] }
+      }
     };
 
     if (isPreview) {
       res.json({
         success: true,
         materia: cleanSubject,
-        payload: wordPayload
+        payload: docxPayload
       });
       return;
     }
 
-    console.log("Compiling Word DOCX entirely in-memory...");
-    const outBuffer = compileDocxWithPayload(wordPayload, templateBase64);
+    console.log("Compiling Word DOCX using new modular Preservation Engine...");
+    
+    let finalTemplate = templateBase64;
+    if (!finalTemplate) {
+      const defaultPath = path.resolve(process.cwd(), "CNT FORMATO PLANEACION.docx");
+      ensureTemplateExists();
+      finalTemplate = fs.readFileSync(defaultPath).toString("base64");
+    }
+
+    const result = await docxOrchestrator.generate(finalTemplate, docxPayload);
+    const outBuffer = result.buffer;
 
     console.log("Success! Delivering binary output stream in response headers...");
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");

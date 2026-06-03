@@ -453,7 +453,7 @@ export default function App() {
       const resData = await response.json();
       if (resData.success && resData.payload) {
         setMateriaName(resData.materia || materiaName);
-        setGeneratedSessions(resData.payload.sesiones || []);
+        setGeneratedSessions(resData.payload.sessions || []);
         setCurrentStep(5); // Transition to Paso 5: Resultado
         setSuccess(true);
       } else {
@@ -1570,8 +1570,8 @@ export default function App() {
                     <PlanlyLogo variant="horizontal" className="w-full h-full" />
                   </div>
                   <div className="text-right text-xs">
-                    <p className="font-bold text-[#0B2A5B]">Planly - Un producto más de RAUVIA</p>
-                    <p className="text-[#64748B]">Licencia Corporativa Enterprise • raul.morales@rauvia.com.mx</p>
+                    <p className="font-bold text-[#0B2A5B]">Planly - Un producto de RAUVIA Consulting</p>
+                    <p className="text-[#64748B]">Licencia Corporativa Enterprise</p>
                   </div>
                 </div>
 
@@ -1582,7 +1582,7 @@ export default function App() {
                       <input
                         type="text"
                         disabled
-                        value="raul.morales@rauvia.com.mx"
+                        value="docente@planly.app"
                         className="planly-input text-xs font-bold bg-slate-50 text-slate-400 cursor-not-allowed"
                       />
                     </div>
