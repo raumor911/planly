@@ -192,20 +192,27 @@ app.post("/api/curricula/generate", async (req, res) => {
       return;
     }
 
-    console.log("[DOCX] Compiling ephemeral in-memory output...");
+    // Identificación y Embalaje de Insumos en el endpoint POST /api/curricula/generate 
+    console.log("[DOCX] Compiling ephemeral in-memory output using high-fidelity custom pipeline..."); 
     
-    let finalTemplate = templateBase64;
-    if (!finalTemplate) {
-      const defaultPath = path.resolve(process.cwd(), "CNT FORMATO PLANEACION.docx");
-      finalTemplate = fs.readFileSync(defaultPath).toString("base64");
-    }
-
-    // Process ephemeral in-memory with FidelityTemplateEngine (Regex + Docxtemplater)
-    const zip = new PizZip(Buffer.from(finalTemplate, 'base64'));
-    const outBuffer = await fidelityEngine.process(zip, docxPayload);
+    // Candado estricto del Flujo Único Requerido 
+    if (!templateBase64) { 
+      res.status(400).json({ error: "La carga de la plantilla personalizada institucional (.docx) es obligatoria para este flujo." }); 
+      return; 
+    } 
+ 
+    // 1. Tomar la plantilla personalizada del docente y convertirla a Buffer binario de RAM 
+    const templateBuffer = Buffer.from(templateBase64, 'base64'); 
     
-    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
-    res.setHeader("Content-Disposition", `attachment; filename="Planeacion_${cleanSubject.replace(/\s+/g, '_')}.docx"`);
+    // 2. Inicializar el contenedor zip en la memoria efímera del servidor 
+    const zip = new PizZip(templateBuffer); 
+    
+    // 3. El diccionario de datos (docxPayload) ejecuta la cirugía in-place e inserta la información 
+    const outBuffer = await fidelityEngine.process(zip, docxPayload); 
+ 
+    // 4. Transmisión limpia del flujo resultante directo al navegador 
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"); 
+    res.setHeader("Content-Disposition", `attachment; filename="Planeacion_${cleanSubject.replace(/\s+/g, '_')}.docx"`); 
     res.send(outBuffer);
 
   } catch (error: any) {
