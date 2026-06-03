@@ -204,8 +204,6 @@ app.post("/api/curricula/generate", async (req, res) => {
     const zip = new PizZip(Buffer.from(finalTemplate, 'base64'));
     const outBuffer = await fidelityEngine.process(zip, docxPayload);
     
-    console.log("[DOCX] Output generated successfully");
-
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
     res.setHeader("Content-Disposition", `attachment; filename="Planeacion_${cleanSubject.replace(/\s+/g, '_')}.docx"`);
     res.send(outBuffer);

@@ -50,16 +50,16 @@ export class FidelityTemplateEngine {
     }));
 
     const renderData = {
-      // Campos planos para reemplazo directo
+      // Campos planos para reemplazo directo (Fidelity Mapping)
       materia: payload.course?.name || 'Asignatura',
       objetivo_general: payload.course?.generalObjective || '',
       clave: payload.course?.code || '',
       docente: 'Docente Planly',
       ciclo: '2026-1',
-      // Soporte dual para bucles
+      // Soporte dual para bucles semánticos
       sesiones: sessionsMapped,
       sessions: sessionsMapped,
-      // Metadatos de curso
+      // Metadatos de curso estructurados
       course: {
         name: payload.course?.name || '',
         code: payload.course?.code || '',
@@ -76,7 +76,7 @@ export class FidelityTemplateEngine {
 
     const finalZip = doc.getZip();
     
-    // Auditoría final
+    // Auditoría final de integridad binaria
     const imagesAfter = Object.keys(finalZip.files).filter(k => k.startsWith('word/media/')).length;
     const headersPreserved = Object.keys(finalZip.files).some(k => k.startsWith('word/header'));
     
@@ -114,65 +114,93 @@ export class FidelityTemplateEngine {
   private injectLoopTags(xml: string): string {
     if (xml.includes('{#sesiones}')) return xml;
 
-    // 1. Barrido de filas <w:tr> para localizar la cabecera didáctica
-    const rowRegex = /<w:tr[\s\S]*?<\/w:tr>/g;
-    const allRows = xml.match(rowRegex);
-    if (!allRows) return xml;
+    // 1. Barrido de tablas <w:tbl> para localizar la cabecera didáctica
+    const tableRegex = /<w:tbl[\s\S]*?<\/w:tbl>/g;
+    const allTables = xml.match(tableRegex);
+    if (!allTables) return xml;
 
-    const sessionHeaders = ['Sesión', 'Fecha', 'Tema', 'Actividades', 'Objetivo', 'Recursos'];
-    let headerRowIdx = -1;
+    const headerMap = [
+      { role: 'num', regex: /Sesión|N[o°]|Num/i },
+      { role: 'fecha', regex: /Fecha|Día/i },
+      { role: 'tema', regex: /Tema|Contenido/i },
+      { role: 'actividad', regex: /Actividad|Estrategia|Técnica/i },
+      { role: 'objetivo', regex: /Objetivo|Propósito/i }
+    ];
 
-    for (let i = 0; i < allRows.length; i++) {
+    let selectedTableIdx = -1;
+    let colRoles: Record<number, string> = {};
+    let headerRowXml = '';
+    let dataRowXml = '';
+
+    allTables.forEach((tableXml, tIdx) => {
+      const rows = tableXml.match(/<w:tr[\s\S]*?<\/w:tr>/g);
+      if (!rows || rows.length < 2) return;
+
+      const firstRow = rows[0];
+      const cells = firstRow.match(/<w:tc[\s\S]*?<\/w:tc>/g) || [];
+      
+      let currentTableRoles: Record<number, string> = {};
       let score = 0;
-      sessionHeaders.forEach(h => {
-        if (new RegExp(h, 'i').test(allRows[i])) score++;
+
+      cells.forEach((cellXml, cIdx) => {
+        headerMap.forEach(h => {
+          if (h.regex.test(cellXml)) {
+            currentTableRoles[cIdx] = h.role;
+            score++;
+          }
+        });
       });
 
-      if (score >= 2) {
-        headerRowIdx = i;
-        break;
+      // UMBRAL ACTUALIZADO: score >= 2 para mayor tolerancia institucional
+      if (score >= 2 && score > (Object.keys(colRoles).length)) {
+        selectedTableIdx = tIdx;
+        colRoles = currentTableRoles;
+        headerRowXml = rows[0];
+        dataRowXml = rows[1];
       }
-    }
+    });
 
-    if (headerRowIdx === -1 || headerRowIdx + 1 >= allRows.length) {
-      console.warn('[DOCX] No se detectó tabla de planeación mediante barrido de filas.');
+    if (selectedTableIdx === -1) {
+      console.warn('[DOCX] No se detectó tabla de planeación con puntuación >= 2.');
       return xml;
     }
 
-    console.log(`[DOCX] Planning header row found at index ${headerRowIdx}`);
+    console.log(`[DOCX] Planning table selected: index ${selectedTableIdx} with ${Object.keys(colRoles).length} roles.`);
 
-    // 2. Extraer la fila base (contigua inferior) y sus celdas
-    const dataRowXml = allRows[headerRowIdx + 1];
+    // 2. Extraer arreglo de celdas de la fila base (dataRowXml)
     const cellRegex = /<w:tc[\s\S]*?<\/w:tc>/g;
-    const cells = dataRowXml.match(cellRegex) || [];
+    const dataCells = dataRowXml.match(cellRegex) || [];
+    if (dataCells.length === 0) return xml;
 
-    if (cells.length === 0) return xml;
+    // 3. Mapear cada columna inyectando su variable correspondiente ({num}, {fecha}, etc.)
+    const colIndices = Object.keys(colRoles).map(Number).sort((a, b) => a - b);
+    const firstColIdx = colIndices[0];
+    const lastColIdx = colIndices[colIndices.length - 1];
 
-    // 3. Mapear cada columna inyectando su variable correspondiente
-    const updatedCells = cells.map((cellXml, cIdx) => {
-      let token = '';
-      switch (cIdx) {
-        case 0: token = '{num}'; break;
-        case 1: token = '{fecha}'; break;
-        case 2: token = '{tema}'; break;
-        case 3: token = '{actividad}'; break;
-        default: token = '{objetivo}'; break;
-      }
+    const updatedCells = dataCells.map((cellXml, cIdx) => {
+      const role = colRoles[cIdx];
+      let token = role ? `{${role}}` : '';
 
-      // 4. Anteponer {#sesiones} y anexar {/sesiones} perimetralmente dentro de <w:t>
-      if (cIdx === 0) {
+      // 4. Anteponer {#sesiones} y anexar {/sesiones} perimetralmente
+      if (cIdx === firstColIdx) {
         token = `{#sesiones}${token}`;
       }
-      if (cIdx === cells.length - 1) {
+      if (cIdx === lastColIdx) {
         token = `${token}{/sesiones}`;
       }
 
-      // Reemplazo limpio intracelda pura sobre el tag <w:t>
+      if (!token) return cellXml;
+
+      // Reemplazo quirúrgico únicamente sobre etiquetas nativas de texto <w:t>
       return cellXml.replace(/(<w:t[^>]*>)([\s\S]*?)(<\/w:t>)/, `$1${token}$3`);
     });
 
     // 5. Reensamblar updatedRowXml e inyectarlo en el documento
     const updatedRowXml = dataRowXml.replace(cellRegex, () => updatedCells.shift() || '');
-    return xml.replace(allRows[headerRowIdx + 1], updatedRowXml);
+    const tableXml = allTables[selectedTableIdx];
+    const rows = tableXml.match(/<w:tr[\s\S]*?<\/w:tr>/g) || [];
+    
+    const updatedTableXml = tableXml.replace(rows[1], updatedRowXml);
+    return xml.replace(allTables[selectedTableIdx], updatedTableXml);
   }
 }
