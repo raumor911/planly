@@ -12,6 +12,10 @@ export class FidelityTemplateEngine {
   /**
    * Procesa la plantilla DOCX utilizando manipulación pura de strings (Regex)
    * para inyectar etiquetas semánticas y luego delega el renderizado a Docxtemplater.
+   * 
+   * @param zip Instancia de PizZip con el contenido del DOCX.
+   * @param payload Datos de la asignatura y sesiones generados por la IA.
+   * @returns Buffer con el DOCX final procesado.
    */
   public async process(zip: PizZip, payload: DocxPayload): Promise<Buffer> {
     const documentXmlPath = 'word/document.xml';
@@ -28,19 +32,19 @@ export class FidelityTemplateEngine {
     // 1. Inyección de Campos Libres (Passive Tagging) mediante Regex sobre <w:t>
     xml = this.injectPassiveTags(xml, payload);
 
-    // 2. Detección de Tabla por barrido de filas y Marcado de Bucles
+    // 2. Detección de Tabla por barrido de filas y Marcado de Bucles Semánticos
     xml = this.injectLoopTags(xml);
 
     // Guardar XML modificado en el ZIP
     zip.file(documentXmlPath, xml);
 
-    // 3. Render Final con Docxtemplater
+    // 3. Render Final con Docxtemplater (Motor de Fidelidad Semántica)
     const doc = new Docxtemplater(zip, {
       paragraphLoop: true,
       linebreaks: true,
     });
 
-    // Mapeo de datos dual (soporta sesiones y sessions, campos planos y estructurados)
+    // Mapeo de datos para soporte dual (sesiones y sessions)
     const sessionsMapped = (payload.sessions || []).map(s => ({
       num: s.num || 0,
       fecha: s.fecha || '',
@@ -49,17 +53,18 @@ export class FidelityTemplateEngine {
       objetivo: s.objetivo || ''
     }));
 
+    // Objeto de renderizado duplicado en espejo para compatibilidad total
     const renderData = {
-      // Campos planos para reemplazo directo (Fidelity Mapping)
+      // Campos planos individuales
       materia: payload.course?.name || 'Asignatura',
       objetivo_general: payload.course?.generalObjective || '',
       clave: payload.course?.code || '',
       docente: 'Docente Planly',
       ciclo: '2026-1',
-      // Soporte dual para bucles semánticos
+      // Colecciones con soporte dual
       sesiones: sessionsMapped,
       sessions: sessionsMapped,
-      // Metadatos de curso estructurados
+      // Soporte para objetos estructurados
       course: {
         name: payload.course?.name || '',
         code: payload.course?.code || '',
@@ -70,13 +75,13 @@ export class FidelityTemplateEngine {
     try {
       doc.render(renderData);
     } catch (error: any) {
-      console.error('[DOCX] Error renderizando con Docxtemplater:', error);
+      console.error('[DOCX] Error crítico en renderizado de Docxtemplater:', error);
       throw error;
     }
 
     const finalZip = doc.getZip();
     
-    // Auditoría final de integridad binaria
+    // Auditoría final de integridad y activos
     const imagesAfter = Object.keys(finalZip.files).filter(k => k.startsWith('word/media/')).length;
     const headersPreserved = Object.keys(finalZip.files).some(k => k.startsWith('word/header'));
     
@@ -114,7 +119,7 @@ export class FidelityTemplateEngine {
   private injectLoopTags(xml: string): string {
     if (xml.includes('{#sesiones}')) return xml;
 
-    // 1. Barrido de tablas <w:tbl> para localizar la cabecera didáctica
+    // 1. Localizar tablas <w:tbl> para análisis de cabeceras
     const tableRegex = /<w:tbl[\s\S]*?<\/w:tbl>/g;
     const allTables = xml.match(tableRegex);
     if (!allTables) return xml;
@@ -129,7 +134,6 @@ export class FidelityTemplateEngine {
 
     let selectedTableIdx = -1;
     let colRoles: Record<number, string> = {};
-    let headerRowXml = '';
     let dataRowXml = '';
 
     allTables.forEach((tableXml, tIdx) => {
@@ -151,11 +155,10 @@ export class FidelityTemplateEngine {
         });
       });
 
-      // UMBRAL ACTUALIZADO: score >= 2 para mayor tolerancia institucional
+      // UMBRAL DE CALIDAD: score >= 2 para máxima tolerancia institucional
       if (score >= 2 && score > (Object.keys(colRoles).length)) {
         selectedTableIdx = tIdx;
         colRoles = currentTableRoles;
-        headerRowXml = rows[0];
         dataRowXml = rows[1];
       }
     });
@@ -167,12 +170,12 @@ export class FidelityTemplateEngine {
 
     console.log(`[DOCX] Planning table selected: index ${selectedTableIdx} with ${Object.keys(colRoles).length} roles.`);
 
-    // 2. Extraer arreglo de celdas de la fila base (dataRowXml)
+    // 2. Extraer arreglo aislado de celdas de la fila base
     const cellRegex = /<w:tc[\s\S]*?<\/w:tc>/g;
     const dataCells = dataRowXml.match(cellRegex) || [];
     if (dataCells.length === 0) return xml;
 
-    // 3. Mapear cada columna inyectando su variable correspondiente ({num}, {fecha}, etc.)
+    // 3. Inyectar tokens individuales ({num}, {fecha}, etc.) directamente en <w:t>
     const colIndices = Object.keys(colRoles).map(Number).sort((a, b) => a - b);
     const firstColIdx = colIndices[0];
     const lastColIdx = colIndices[colIndices.length - 1];
@@ -181,7 +184,7 @@ export class FidelityTemplateEngine {
       const role = colRoles[cIdx];
       let token = role ? `{${role}}` : '';
 
-      // 4. Anteponer {#sesiones} y anexar {/sesiones} perimetralmente
+      // Blindaje estructural: anteponer {#sesiones} y anexar {/sesiones}
       if (cIdx === firstColIdx) {
         token = `{#sesiones}${token}`;
       }
@@ -191,16 +194,16 @@ export class FidelityTemplateEngine {
 
       if (!token) return cellXml;
 
-      // Reemplazo quirúrgico únicamente sobre etiquetas nativas de texto <w:t>
+      // Inyección quirúrgica intracelda sobre la etiqueta nativa de texto
       return cellXml.replace(/(<w:t[^>]*>)([\s\S]*?)(<\/w:t>)/, `$1${token}$3`);
     });
 
-    // 5. Reensamblar updatedRowXml e inyectarlo en el documento
+    // 4. Reensamblar fila y actualizar documento
     const updatedRowXml = dataRowXml.replace(cellRegex, () => updatedCells.shift() || '');
     const tableXml = allTables[selectedTableIdx];
-    const rows = tableXml.match(/<w:tr[\s\S]*?<\/w:tr>/g) || [];
+    const tableRows = tableXml.match(/<w:tr[\s\S]*?<\/w:tr>/g) || [];
     
-    const updatedTableXml = tableXml.replace(rows[1], updatedRowXml);
+    const updatedTableXml = tableXml.replace(tableRows[1], updatedRowXml);
     return xml.replace(allTables[selectedTableIdx], updatedTableXml);
   }
 }
