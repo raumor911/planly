@@ -137,20 +137,40 @@ export class FidelityTemplateEngine {
     if (!rows || rows.length < 2) return xml;
 
     // Fila base de captura (generalmente la segunda fila)
-    let dataRowXml = rows[1];
+    const dataRowXml = rows[1];
     
-    // Inyectar etiquetas de bucle de Docxtemplater {#sesiones} y {/sesiones}
-    // dentro de los nodos <w:t> para preservar el formato OpenXML
-    dataRowXml = dataRowXml.replace(/(<w:t[^>]*>)/, '$1{#sesiones}');
-    
-    const tNodes = dataRowXml.match(/<w:t[^>]*>[\s\S]*?<\/w:t>/g);
-    if (tNodes && tNodes.length > 0) {
-      const lastT = tNodes[tNodes.length - 1];
-      const updatedLastT = lastT.replace(/<\/w:t>$/, '{/sesiones}</w:t>');
-      dataRowXml = dataRowXml.split(lastT).join(updatedLastT);
-    }
+    // 1. Recuperar arreglo de celdas
+    const cells = dataRowXml.match(/<w:tc[\s\S]*?<\/w:tc>/g);
+    if (!cells) return xml;
 
-    const updatedTableXml = tableXml.replace(rows[1], dataRowXml);
+    // 2. Mapear cada celda asignándole su respectivo token dinámico
+    const updatedCells = cells.map((cellXml, cIdx) => {
+      let token = '';
+      switch (cIdx) {
+        case 0: token = '{num}'; break;
+        case 1: token = '{fecha}'; break;
+        case 2: token = '{tema}'; break;
+        case 3: token = '{actividad}'; break;
+        default: token = '{objetivo}'; break;
+      }
+
+      // 3. Anteponer {#sesiones} al primero y anexar {/sesiones} al último
+      if (cIdx === 0) {
+        token = `{#sesiones}${token}`;
+      }
+      if (cIdx === cells.length - 1) {
+        token = `${token}{/sesiones}`;
+      }
+
+      // 4. Reemplazar contenido del nodo <w:t> intracelda pura
+      return cellXml.replace(/(<w:t[^>]*>)([\s\S]*?)(<\/w:t>)/, `$1${token}$3`);
+    });
+
+    // 5. Reensamblar updatedRowXml y reemplazar la fila original
+    let cellIdx = 0;
+    const updatedRowXml = dataRowXml.replace(/<w:tc[\s\S]*?<\/w:tc>/g, () => updatedCells[cellIdx++] || '');
+    
+    const updatedTableXml = tableXml.replace(rows[1], updatedRowXml);
     return xml.replace(tables[selectedTableIdx], updatedTableXml);
   }
 }
