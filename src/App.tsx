@@ -707,8 +707,8 @@ export default function App() {
                             <div className="bg-gradient-to-r from-[#F1EFFF] to-[#EAF4FF] border border-[#6D5DFB]/10 p-3.5 rounded-xl flex items-start gap-3 animate-pulse">
                               <Loader2 className="w-4 h-4 text-[#6D5DFB] animate-spin shrink-0 mt-0.5" />
                               <div className="text-[11px]">
-                                <p className="font-bold text-[#140F3E]">Mapeando contenido escolar con IA...</p>
-                                <p className="text-slate-600">Procesando estructura y omitiendo metadatos.</p>
+                                <p className="font-bold text-[#140F3E]">Extrayendo texto del documento...</p>
+                                <p className="text-slate-600">Procesando archivo para importarlo al editor.</p>
                               </div>
                             </div>
                           )}
@@ -717,8 +717,8 @@ export default function App() {
                             <div className="bg-[#EAFBF0] border border-[#22C55E]/10 p-3.5 rounded-xl flex items-start gap-2.5">
                               <CheckCircle2 className="w-4.5 h-4.5 text-[#22C55E] shrink-0 mt-0.5" />
                               <div className="text-[11px]">
-                                <p className="font-bold text-emerald-800">¡Temario analizado correctamente!</p>
-                                <p className="text-emerald-700">El alcance ha sido mapeado e importado con éxito al editor.</p>
+                                <p className="font-bold text-emerald-800">¡Texto extraído correctamente!</p>
+                                <p className="text-emerald-700">El texto ha sido importado con éxito al editor.</p>
                               </div>
                             </div>
                           )}
@@ -727,7 +727,7 @@ export default function App() {
                             <div className="bg-rose-50 border border-rose-200 p-3.5 rounded-xl flex items-start gap-2.5">
                               <AlertCircle className="w-4.5 h-4.5 text-rose-500 shrink-0 mt-0.5" />
                               <div className="text-[11px]">
-                                <p className="font-bold text-rose-800">Error en el análisis</p>
+                                <p className="font-bold text-rose-800">Error en la extracción</p>
                                 <p className="text-rose-700">{fileParseError}</p>
                               </div>
                             </div>

@@ -85,12 +85,11 @@ app.post("/api/curricula/extract-text", async (req, res) => {
         throw new Error("No se pudo extraer ningún texto del documento de Word subido.");
       }
       
-      // Pass raw extracted text to Gemini to make it extremely clean and remove meta-fluff
-      resultText = await cleanUpRawWordText(rawText);
+      // Se extrae el texto puro sin procesar por IA en esta etapa
+      resultText = rawText;
     } else if (mimeType.startsWith("text/")) {
       console.log("Processing TXT/Markdown text document...");
-      const text = Buffer.from(fileBase64, "base64").toString("utf8");
-      resultText = await cleanUpRawWordText(text);
+      resultText = Buffer.from(fileBase64, "base64").toString("utf8");
     } else {
       res.status(400).json({ error: "El formato de archivo no es soportado. Por favor, cargue un archivo de Word (.docx) o un PDF (.pdf)." });
       return;
