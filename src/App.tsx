@@ -35,6 +35,14 @@ import { ExamModule } from "./components/ExamModule";
 import { PlanlyLogo } from "./components/PlanlyLogo";
 
 export default function App() {
+  type GeneratedSession = {
+    num: number;
+    fecha: string;
+    tema: string;
+    actividad: string;
+    objetivo: string;
+  };
+
   const [activeTab, setActiveTab] = useState(() => {
     try {
       return localStorage.getItem("planly_activeTab") || "inicio";
@@ -56,6 +64,9 @@ export default function App() {
   const [success, setSuccess] = useState(false);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const [isCompiling, setIsCompiling] = useState(false);
+  const compileTimeoutRef = React.useRef<number | null>(null);
+  const compileAbortRef = React.useRef<AbortController | null>(null);
+  const compileRunIdRef = React.useRef(0);
 
   // File parsing states
   const [fileParsing, setFileParsing] = useState(false);
@@ -260,13 +271,7 @@ export default function App() {
   }, [entregableType]);
 
   // Output generated sessions state (The centerpiece spreadsheet table)
-  const [generatedSessions, setGeneratedSessions] = useState<Array<{
-    num: number;
-    fecha: string;
-    tema: string;
-    actividad: string;
-    objetivo: string;
-  }>>(() => {
+  const [generatedSessions, setGeneratedSessions] = useState<GeneratedSession[]>(() => {
     try {
       const stored = localStorage.getItem("planly_generatedSessions");
       return stored ? JSON.parse(stored) : [];
@@ -406,6 +411,10 @@ export default function App() {
     setTemplateBase64("");
     setTemplateMeta({ hasCustom: false });
     setGeneratedSessions([]);
+    setDownloadUrl((prev) => {
+      if (prev) window.URL.revokeObjectURL(prev);
+      return null;
+    });
     try {
       localStorage.removeItem("planly_templatebase64");
       localStorage.removeItem("planly_templateMeta");
@@ -426,46 +435,80 @@ export default function App() {
   // Live total percentages validator
   const totalPct = Number(examenPct) + Number(continuaPct) + Number(plataformaPct) + Number(exposicionPct);
 
-  const generateAndCacheDocx = async (sessionsList: any[]) => {
-    setIsCompiling(true);
-    try {
-      const response = await fetch("/api/curricula/generate", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          sesionesOverride: sessionsList,
-          materiaOverride: materiaName,
-          fechaInicio,
-          numSesiones,
-          examenPct: `${examenPct}%`,
-          continuaPct: `${continuaPct}%`,
-          plataformaPct: `${plataformaPct}%`,
-          exposicionPct: `${exposicionPct}%`,
-          mecanismo,
-          tipografia,
-          templateBase64: templateBase64 || undefined
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error("No se pudo obtener el archivo binario del servidor.");
-      }
-
-      const blob = await response.blob();
-      const newUrl = window.URL.createObjectURL(blob);
-      
-      if (downloadUrl) {
-        window.URL.revokeObjectURL(downloadUrl);
-      }
-      
-      setDownloadUrl(newUrl);
-    } catch (err: any) {
-      console.error("Error al pre-compilar DOCX:", err);
-    } finally {
-      setIsCompiling(false);
+  const generateAndCacheDocx = async (sessionsList: GeneratedSession[]) => {
+    if (compileTimeoutRef.current) {
+      window.clearTimeout(compileTimeoutRef.current);
     }
+
+    compileTimeoutRef.current = window.setTimeout(async () => {
+      const runId = ++compileRunIdRef.current;
+
+      try {
+        setIsCompiling(true);
+        setErrorMessage("");
+
+        if (compileAbortRef.current) {
+          compileAbortRef.current.abort();
+        }
+        const abortController = new AbortController();
+        compileAbortRef.current = abortController;
+
+        const response = await fetch("/api/curricula/generate", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          signal: abortController.signal,
+          body: JSON.stringify({
+            sesionesOverride: sessionsList,
+            templateBase64: templateBase64 || undefined,
+            materiaOverride: materiaName,
+            fechaInicio,
+            numSesiones,
+            examenPct: `${examenPct}%`,
+            continuaPct: `${continuaPct}%`,
+            plataformaPct: `${plataformaPct}%`,
+            exposicionPct: `${exposicionPct}%`,
+            mecanismo,
+            tipografia,
+          }),
+        });
+
+        if (!response.ok) {
+          let msg = "No se pudo obtener el archivo binario del servidor.";
+          try {
+            const errData = (await response.json()) as { error?: string };
+            if (errData?.error) msg = errData.error;
+          } catch {
+            // ignore
+          }
+          throw new Error(msg);
+        }
+
+        const blob = await response.blob();
+        const newUrl = window.URL.createObjectURL(blob);
+
+        if (compileRunIdRef.current !== runId) {
+          window.URL.revokeObjectURL(newUrl);
+          return;
+        }
+
+        setDownloadUrl((prev) => {
+          if (prev) window.URL.revokeObjectURL(prev);
+          return newUrl;
+        });
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") {
+          return;
+        }
+        const msg = err instanceof Error ? err.message : "Error desconocido al pre-compilar el DOCX.";
+        setErrorMessage(msg);
+      } finally {
+        if (compileRunIdRef.current === runId) {
+          setIsCompiling(false);
+        }
+      }
+    }, 450);
   };
 
   // Step 4 trigger - structures raw syllabus content with Gemini through /api/curricula/generate
@@ -544,10 +587,9 @@ export default function App() {
     }
   };
 
-  // Triggers official DOCX export using pre-compiled background blob
   const handleExportDocx = () => {
     if (!downloadUrl) {
-      setErrorMessage("El archivo aún se está compilando. Por favor espera unos segundos.");
+      setErrorMessage("El archivo aún no está listo para descarga. Espera a que termine la compilación en segundo plano.");
       return;
     }
     const link = document.createElement("a");
@@ -1314,6 +1356,14 @@ export default function App() {
                         </div>
 
                         <div className="flex gap-2 w-full sm:w-auto">
+                          {(errorMessage || isCompiling || downloadUrl) && (
+                            <div className="flex items-center gap-2 text-[10px] font-bold text-slate-500">
+                              <span className={`inline-block w-2 h-2 rounded-full ${downloadUrl ? "bg-emerald-500" : isCompiling ? "bg-amber-500" : "bg-rose-500"}`} />
+                              <span>
+                                {downloadUrl ? "DOCX listo" : isCompiling ? "Compilando en segundo plano..." : errorMessage ? "Error al compilar" : ""}
+                              </span>
+                            </div>
+                          )}
                           <button
                             type="button"
                             onClick={() => {
@@ -1328,8 +1378,8 @@ export default function App() {
                           <button
                             type="button"
                             onClick={handleExportDocx}
-                            disabled={isCompiling}
-                            className={`w-full sm:w-auto bg-[#22C55E] text-white font-extrabold px-5 py-2.5 text-xs rounded-xl border-none hover:bg-[#1faa4f] flex items-center justify-center gap-1.5 shadow-md cursor-pointer transition-all ${isCompiling ? 'opacity-70 cursor-wait' : ''}`}
+                            disabled={isCompiling && !downloadUrl}
+                            className={`w-full sm:w-auto bg-[#22C55E] text-white font-extrabold px-5 py-2.5 text-xs rounded-xl border-none hover:bg-[#1faa4f] flex items-center justify-center gap-1.5 shadow-md cursor-pointer transition-all ${(isCompiling && !downloadUrl) ? "opacity-70 cursor-wait" : ""}`}
                           >
                             {isCompiling ? (
                               <Loader2 className="w-4 h-4 shrink-0 animate-spin" />
@@ -1339,6 +1389,11 @@ export default function App() {
                             <span>{isCompiling ? "Compilando..." : "Descargar Word (.docx)"}</span>
                           </button>
                         </div>
+                        {!!errorMessage && (
+                          <div className="mt-2 text-[11px] text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2 w-full">
+                            {errorMessage}
+                          </div>
+                        )}
                       </div>
 
                     </div>
