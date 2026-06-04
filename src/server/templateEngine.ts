@@ -99,6 +99,7 @@ export class FidelityTemplateEngine {
   }
 
   private escapeXml(value: string): string {
+    if (typeof value !== 'string') value = String(value || "");
     return value
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
@@ -154,7 +155,10 @@ export class FidelityTemplateEngine {
         const currentRoles: { [colIdx: number]: string } = {};
 
         cells.forEach((cellXml, cIdx) => {
-          const text = cellXml.replace(/<[^>]*?>/g, "").trim().toLowerCase();
+          let text = cellXml.replace(/<[^>]*?>/g, "");
+          if (typeof text !== 'string') text = String(text || "");
+          text = text.trim().toLowerCase();
+          
           if (/sesi|semana|no\.|clase/i.test(text)) { currentRoles[cIdx] = "num"; score++; }
           else if (/fecha|calendario|cronograma/i.test(text)) { currentRoles[cIdx] = "fecha"; score++; }
           else if (/tema|contenido|subtema|unidad/i.test(text)) { currentRoles[cIdx] = "tema"; score++; }
