@@ -152,32 +152,53 @@ export default function App() {
   });
 
   // Template custom manager states
-  const [templateBase64, setTemplateBase64] = useState<string>("");
+  const [templateBase64, setTemplateBase64] = useState<string>(() => {
+    try {
+      return localStorage.getItem("planly_templatebase64") || "";
+    } catch {
+      return "";
+    }
+  });
+
   const [templateMeta, setTemplateMeta] = useState<{
     hasCustom: boolean;
     fileName?: string;
     fileSize?: number;
     uploadedAt?: string;
-  }>({ hasCustom: false });
+  }>(() => {
+    try {
+      const stored = localStorage.getItem("planly_templateMeta");
+      return stored ? JSON.parse(stored) : { hasCustom: false };
+    } catch {
+      return { hasCustom: false };
+    }
+  });
+
   const [uploadingTemplate, setUploadingTemplate] = useState(false);
   const [templateMsg, setTemplateMsg] = useState("");
   const [templateError, setTemplateError] = useState("");
 
-  const fetchTemplateInfo = async () => {
+  // Escucha activa para respaldar la cadena Base64
+  React.useEffect(() => {
     try {
-      const response = await fetch("/api/template/info");
-      if (response.ok) {
-        const data = await response.json();
-        setTemplateMeta(data);
+      if (templateBase64) {
+        localStorage.setItem("planly_templatebase64", templateBase64);
+      } else {
+        localStorage.removeItem("planly_templatebase64");
       }
     } catch (e) {
-      console.warn("No se pudo obtener la metadata de la plantilla:", e);
+      console.warn("Error al persistir planly_templatebase64 en localStorage:", e);
     }
-  };
+  }, [templateBase64]);
 
+  // Escucha activa para respaldar la metadata del formato institucional
   React.useEffect(() => {
-    fetchTemplateInfo();
-  }, []);
+    try {
+      localStorage.setItem("planly_templateMeta", JSON.stringify(templateMeta));
+    } catch (e) {
+      console.warn("Error al persistir planly_templateMeta en localStorage:", e);
+    }
+  }, [templateMeta]);
 
   // Sync state items to localStorage on any modification
   React.useEffect(() => {
@@ -382,6 +403,14 @@ export default function App() {
   const handleResetTemplate = () => {
     setTemplateBase64("");
     setTemplateMeta({ hasCustom: false });
+    setGeneratedSessions([]);
+    try {
+      localStorage.removeItem("planly_templatebase64");
+      localStorage.removeItem("planly_templateMeta");
+      localStorage.removeItem("planly_generatedSessions");
+    } catch (e) {
+      console.warn(e);
+    }
     setTemplateMsg("Se ha restablecido el formato estándar por defecto.");
     setTemplateError("");
   };
@@ -434,7 +463,8 @@ export default function App() {
           exposicionPct: `${exposicionPct}%`,
           mecanismo,
           tipografia,
-          isPreview: true // Dynamic preview JSON fetch
+          isPreview: true,
+          templateBase64: templateBase64 || undefined
         }),
       });
 
@@ -481,17 +511,7 @@ export default function App() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          temario,
-          fechaInicio,
-          numSesiones,
-          examenPct: `${examenPct}%`,
-          continuaPct: `${continuaPct}%`,
-          plataformaPct: `${plataformaPct}%`,
-          exposicionPct: `${exposicionPct}%`,
-          mecanismo,
-          tipografia,
           sesionesOverride: generatedSessions, // Handover of custom edited table rows
-          materiaOverride: materiaName,
           templateBase64: templateBase64 || undefined
         }),
       });
@@ -1567,11 +1587,11 @@ export default function App() {
                               "planly_mecanismo",
                               "planly_tipografia",
                               "planly_entregableType",
-                              "planly_generatedSessions"
+                              "planly_generatedSessions",
+                              "planly_templatebase64",
+                              "planly_templateMeta"
                             ];
                             keys.forEach(k => localStorage.removeItem(k));
-                            localStorage.removeItem("planly_templatebase64");
-        localStorage.removeItem("planly_templateMeta");
         
         window.location.reload();
                           } catch (e) {
