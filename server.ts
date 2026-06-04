@@ -8,7 +8,6 @@ import Docxtemplater from "docxtemplater";
 import { createServer as createViteServer } from "vite";
 import mammoth from "mammoth";
 import { SyllabusParser } from "./src/server/modules/parser/syllabus";
-import { DocxOrchestrator } from "./src/server/modules/docx/orchestrator";
 import { DocxPayload } from "./src/server/modules/docx/types";
 import { 
   askGeminiToStructureSyllabus,
@@ -21,7 +20,6 @@ import {
 } from "./src/server/templateEngine";
 
 const syllabusParser = new SyllabusParser();
-const docxOrchestrator = new DocxOrchestrator();
 const fidelityEngine = new FidelityTemplateEngine();
 
 const app = express();
@@ -46,11 +44,19 @@ app.post("/api/projects/:id/parse-syllabus", async (req, res) => {
 app.post("/api/projects/:id/render-docx", async (req, res) => {
   const { templateBase64, payload } = req.body;
   try {
-    const result = await docxOrchestrator.generate(templateBase64, payload);
+    if (!templateBase64) {
+      res.status(400).json({ error: "La plantilla en base64 es obligatoria." });
+      return;
+    }
+
+    const templateBuffer = Buffer.from(templateBase64, 'base64');
+    const zip = new PizZip(templateBuffer);
+    
+    const outBuffer = await fidelityEngine.process(zip, payload);
     
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
     res.setHeader("Content-Disposition", 'attachment; filename="PLAN_DOCENTE.docx"');
-    res.send(result.buffer);
+    res.send(outBuffer);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

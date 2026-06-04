@@ -64,3 +64,55 @@
   box-shadow: 0 0 0 3px rgba(22, 119, 210, 0.15);
   outline: none;
 }
+
+@keyframes badge-breathe {
+  0%,
+  100% {
+    opacity: 0.75;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.sidebar-badge-breathe {
+  animation: badge-breathe 2.2s ease-in-out infinite;
+}
+
+@keyframes shimmer-sweep {
+  0% {
+    transform: translateX(-140%) skewX(-20deg);
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(140%) skewX(-20deg);
+    opacity: 0;
+  }
+}
+
+.sidebar-footer-card::after {
+  content: "";
+  position: absolute;
+  top: -40%;
+  left: 0;
+  width: 60%;
+  height: 180%;
+  background: linear-gradient(
+    110deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.12) 35%,
+    rgba(255, 255, 255, 0.22) 50%,
+    rgba(255, 255, 255, 0.12) 65%,
+    transparent 100%
+  );
+  pointer-events: none;
+  transform: translateX(-140%) skewX(-20deg);
+  opacity: 0;
+}
+
+.sidebar-footer-card:hover::after {
+  animation: shimmer-sweep 900ms ease-out 1;
+}

@@ -123,24 +123,21 @@ export class SyllabusParser {
       required: ["course", "topics", "activities", "evaluation", "resources", "warnings"]
     };
 
-    const model = this.ai.getGenerativeModel({
-      model: "gemini-1.5-flash",
-      systemInstruction: systemPrompt,
-    });
-
     const prompt = `Analiza taxonómicamente el siguiente temario académico:
     
     ${text}`;
 
-    const result = await model.generateContent({
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-      generationConfig: {
+    const result = await this.ai.models.generateContent({
+      model: "gemini-1.5-flash",
+      contents: prompt,
+      config: {
+        systemInstruction: systemPrompt,
         responseMimeType: "application/json",
         responseSchema: responseSchema
       }
     });
 
-    const responseText = result.response.text();
+    const responseText = result.text;
     
     if (!responseText) {
       throw new Error("La respuesta de la IA está vacía.");

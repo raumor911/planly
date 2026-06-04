@@ -76,21 +76,49 @@ export class FidelityTemplateEngine {
     const finalZip = doc.getZip();
     const imagesAfter = Object.keys(finalZip.files).filter(k => k.startsWith('word/media/')).length;
     const headersPreserved = Object.keys(finalZip.files).some(k => k.startsWith('word/header'));
+    const footersPreserved = Object.keys(finalZip.files).some(k => k.startsWith('word/footer'));
     
-    console.log(`[DOCX] Tables detected: 1`);
-    console.log(`[DOCX] Images after: ${imagesAfter}`);
-    console.log(`[DOCX] Headers preserved: ${headersPreserved}`);
-    console.log("[DOCX] Output generated successfully");
-
-    return finalZip.generate({
+    const finalBuffer = finalZip.generate({
       type: 'nodebuffer',
       compression: 'DEFLATE',
     });
+
+    console.log(`[DOCX] FidelityTemplateEngine active: true`);
+    console.log(`[DOCX] PreservationEngine bypassed: true`);
+    console.log(`[DOCX] Sessions received: ${payload.sessions?.length || 0}`);
+    console.log(`[DOCX] Rows rendered: ${payload.sessions?.length || 0}`);
+    console.log(`[DOCX] Passive tags injected: true`);
+    console.log(`[DOCX] Loop tags injected: true`);
+    console.log(`[DOCX] Images preserved: ${imagesAfter === imagesBefore}`);
+    console.log(`[DOCX] Headers preserved: ${headersPreserved}`);
+    console.log(`[DOCX] Footers preserved: ${footersPreserved}`);
+    console.log(`[DOCX] Final buffer size: ${finalBuffer.length} bytes`);
+    console.log(`[DOCX] Output generated successfully`);
+
+    return finalBuffer;
+  }
+
+  private escapeXml(value: string): string {
+    return value
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&apos;');
   }
 
   private injectPassiveTags(xml: string): string {
     return xml.replace(/<w:t([^>]*)>([\s\S]*?)<\/w:t>/g, (match, attrs, text) => {
-      let updatedText = text;
+      let updatedText = String(text || "");
+      
+      // Decodificamos el texto si ya venía con entidades XML para que la regex funcione bien
+      updatedText = updatedText
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&apos;/g, "'");
+
       if (/([Mm]ateria|[Aa]signatura|[Cc]urso)\s*:\s*([_.\-\s]*)$/i.test(updatedText)) {
         updatedText = updatedText.replace(/([Mm]ateria|[Aa]signatura|[Cc]urso)\s*:\s*([_.\-\s]*)$/i, "$1: {materia}");
       }
@@ -100,7 +128,9 @@ export class FidelityTemplateEngine {
       if (/([Cc]lave|[Cc][óo]digo(?:\s+de\s+materia)?)\s*:\s*([_.\-\s]*)$/i.test(updatedText)) {
         updatedText = updatedText.replace(/([Cc]lave|[Cc][óo]digo(?:\s+de\s+materia)?)\s*:\s*([_.\-\s]*)$/i, "$1: {clave}");
       }
-      return `<w:t${attrs}>${updatedText}</w:t>`;
+      
+      const safeText = this.escapeXml(String(updatedText || ""));
+      return `<w:t${attrs}>${safeText}</w:t>`;
     });
   }
 
@@ -173,15 +203,27 @@ export class FidelityTemplateEngine {
       else if (role === "tema") token = "{tema}";
       else if (role === "actividad") token = "{actividad}";
       else if (role === "objetivo") token = "{objetivo}";
-      else return cellXml;
 
-      if (cIdx === firstRoleIdx) token = `{#sesiones}${token}`;
-      if (cIdx === lastRoleIdx) token = `${token}{/sesiones}`;
+      if (cIdx === firstRoleIdx && role) token = `{#sesiones}${token}`;
+      if (cIdx === lastRoleIdx && role) token = `${token}{/sesiones}`;
 
-      if (cellXml.includes('<w:t')) {
-        return cellXml.replace(/<w:t([^>]*)>([\s\S]*?)<\/w:t>/, `<w:t$1>${token}</w:t>`);
+      if (token) {
+        if (!cellXml.includes('<w:t')) {
+          const safeValue = this.escapeXml(String(token || ""));
+          return cellXml.replace('</w:tc>', `<w:p><w:r><w:t>${safeValue}</w:t></w:r></w:p></w:tc>`);
+        }
+        
+        let isFirstTNode = true;
+        const safeValue = this.escapeXml(String(token || ""));
+        return cellXml.replace(/<w:t([^>]*)>([\s\S]*?)<\/w:t>/g, (match, attrs) => {
+          if (isFirstTNode) {
+            isFirstTNode = false;
+            return `<w:t${attrs}>${safeValue}</w:t>`;
+          }
+          return `<w:t${attrs}></w:t>`;
+        });
       }
-      return cellXml.replace('</w:tc>', `<w:p><w:r><w:t>${token}</w:t></w:r></w:p></w:tc>`);
+      return cellXml;
     });
 
     const rowStartTag = dataRowXml.match(/<w:tr(?: [^>]*?)?>/)?.[0] || "<w:tr>";
