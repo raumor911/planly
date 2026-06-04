@@ -54,6 +54,8 @@ export default function App() {
   const [statusMessage, setStatusMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [success, setSuccess] = useState(false);
+  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+  const [isCompiling, setIsCompiling] = useState(false);
 
   // File parsing states
   const [fileParsing, setFileParsing] = useState(false);
@@ -424,6 +426,48 @@ export default function App() {
   // Live total percentages validator
   const totalPct = Number(examenPct) + Number(continuaPct) + Number(plataformaPct) + Number(exposicionPct);
 
+  const generateAndCacheDocx = async (sessionsList: any[]) => {
+    setIsCompiling(true);
+    try {
+      const response = await fetch("/api/curricula/generate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          sesionesOverride: sessionsList,
+          materiaOverride: materiaName,
+          fechaInicio,
+          numSesiones,
+          examenPct: `${examenPct}%`,
+          continuaPct: `${continuaPct}%`,
+          plataformaPct: `${plataformaPct}%`,
+          exposicionPct: `${exposicionPct}%`,
+          mecanismo,
+          tipografia,
+          templateBase64: templateBase64 || undefined
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("No se pudo obtener el archivo binario del servidor.");
+      }
+
+      const blob = await response.blob();
+      const newUrl = window.URL.createObjectURL(blob);
+      
+      if (downloadUrl) {
+        window.URL.revokeObjectURL(downloadUrl);
+      }
+      
+      setDownloadUrl(newUrl);
+    } catch (err: any) {
+      console.error("Error al pre-compilar DOCX:", err);
+    } finally {
+      setIsCompiling(false);
+    }
+  };
+
   // Step 4 trigger - structures raw syllabus content with Gemini through /api/curricula/generate
   const handleGeneratePreview = async () => {
     if (!temario.trim()) {
@@ -486,6 +530,7 @@ export default function App() {
         setGeneratedSessions(resData.payload.sessions || []);
         setCurrentStep(5); // Transition to Paso 5: Resultado
         setSuccess(true);
+        await generateAndCacheDocx(resData.payload.sessions || []);
       } else {
         throw new Error("Formato de respuesta desconocido del servidor");
       }
@@ -499,43 +544,18 @@ export default function App() {
     }
   };
 
-  // Triggers official DOCX compilation with actual manual updates done on the spreadsheet table by the user
-  const handleDownloadDocx = async () => {
-    setLoading(true);
-    setStatusMessage("Compilando nuevo archivo Word con tus modificaciones manuales...");
-
-    try {
-      const response = await fetch("/api/curricula/generate", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          sesionesOverride: generatedSessions, // Handover of custom edited table rows
-          templateBase64: templateBase64 || undefined
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error("No se pudo obtener el archivo binario del servidor.");
-      }
-
-      const blob = await response.blob();
-      const downloadUrl = window.URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = downloadUrl;
-      link.download = `Planeacion_${materiaName.replace(/\s+/g, "_")}.docx`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(downloadUrl);
-
-    } catch (err: any) {
-      setErrorMessage("Error al descargar: " + err.message);
-    } finally {
-      setLoading(false);
-      setStatusMessage("");
+  // Triggers official DOCX export using pre-compiled background blob
+  const handleExportDocx = () => {
+    if (!downloadUrl) {
+      setErrorMessage("El archivo aún se está compilando. Por favor espera unos segundos.");
+      return;
     }
+    const link = document.createElement("a");
+    link.href = downloadUrl;
+    link.download = `Planeacion_${materiaName.replace(/\s+/g, "_")}.docx`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   // Helper inside spreadsheet to edit a row's values
@@ -543,6 +563,7 @@ export default function App() {
     const updated = [...generatedSessions];
     updated[idx][field] = value;
     setGeneratedSessions(updated);
+    generateAndCacheDocx(updated);
   };
 
   return (
@@ -1185,7 +1206,7 @@ export default function App() {
                             <button
                               onClick={() => {
                                 const nextNum = generatedSessions.length + 1;
-                                setGeneratedSessions([
+                                const newSessions = [
                                   ...generatedSessions,
                                   {
                                     num: nextNum,
@@ -1194,7 +1215,9 @@ export default function App() {
                                     actividad: "Actividades prácticas con plantillas de Excel en la plataforma",
                                     objetivo: "Describir el proceso final de auditoría superior"
                                   }
-                                ]);
+                                ];
+                                setGeneratedSessions(newSessions);
+                                generateAndCacheDocx(newSessions);
                               }}
                               className="bg-[#EAF4FF] text-[#1677D2] border border-[#B9DFFF] hover:bg-sky-100 text-[10px] font-bold px-3 py-1.5 rounded-lg cursor-pointer transition-all flex items-center gap-1"
                             >
@@ -1264,7 +1287,9 @@ export default function App() {
                                       <button
                                         type="button"
                                         onClick={() => {
-                                          setGeneratedSessions(generatedSessions.filter((_, itemIdx) => itemIdx !== rIdx));
+                                          const newSessions = generatedSessions.filter((_, itemIdx) => itemIdx !== rIdx);
+                                          setGeneratedSessions(newSessions);
+                                          generateAndCacheDocx(newSessions);
                                         }}
                                         className="text-slate-400 hover:text-rose-600 cursor-pointer"
                                         title="Eliminar tema"
@@ -1302,11 +1327,16 @@ export default function App() {
                           
                           <button
                             type="button"
-                            onClick={handleDownloadDocx}
-                            className="w-full sm:w-auto bg-[#22C55E] text-white font-extrabold px-5 py-2.5 text-xs rounded-xl border-none hover:bg-[#1faa4f] flex items-center justify-center gap-1.5 shadow-md cursor-pointer transition-all"
+                            onClick={handleExportDocx}
+                            disabled={isCompiling}
+                            className={`w-full sm:w-auto bg-[#22C55E] text-white font-extrabold px-5 py-2.5 text-xs rounded-xl border-none hover:bg-[#1faa4f] flex items-center justify-center gap-1.5 shadow-md cursor-pointer transition-all ${isCompiling ? 'opacity-70 cursor-wait' : ''}`}
                           >
-                            <FileText className="w-4 h-4 shrink-0" />
-                            <span>Descargar Word (.docx)</span>
+                            {isCompiling ? (
+                              <Loader2 className="w-4 h-4 shrink-0 animate-spin" />
+                            ) : (
+                              <FileText className="w-4 h-4 shrink-0" />
+                            )}
+                            <span>{isCompiling ? "Compilando..." : "Descargar Word (.docx)"}</span>
                           </button>
                         </div>
                       </div>
