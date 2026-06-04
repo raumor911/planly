@@ -1570,7 +1570,10 @@ export default function App() {
                               "planly_generatedSessions"
                             ];
                             keys.forEach(k => localStorage.removeItem(k));
-                            window.location.reload();
+                            localStorage.removeItem("planly_templatebase64");
+        localStorage.removeItem("planly_templateMeta");
+        
+        window.location.reload();
                           } catch (e) {
                             console.error(e);
                           }
