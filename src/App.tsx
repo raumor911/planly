@@ -267,7 +267,7 @@ export default function App() {
     setSuccess(false);
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleTemarioUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -683,7 +683,7 @@ export default function App() {
                             <input
                               type="file"
                               accept=".docx,.pdf,.txt"
-                              onChange={handleFileUpload}
+                              onChange={handleTemarioUpload}
                               disabled={fileParsing}
                               className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                             />
