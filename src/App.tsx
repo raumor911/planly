@@ -65,7 +65,7 @@ export default function App() {
   const [success, setSuccess] = useState(false);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const [isCompiling, setIsCompiling] = useState(false);
-  const compileTimeoutRef = React.useRef<number | null>(null);
+  const compileTimeoutRef = React.useRef<any>(null);
   const compileAbortRef = React.useRef<AbortController | null>(null);
   const compileRunIdRef = React.useRef(0);
 
@@ -755,7 +755,9 @@ export default function App() {
     value: string
   ) => {
     const updated = [...generatedSessions];
-    updated[idx][field] = value;
+    if (field === "tema") updated[idx].tema = value;
+    else if (field === "actividad") updated[idx].actividad = value;
+    else if (field === "objetivo") updated[idx].objetivo = value;
     setGeneratedSessions(updated);
     generateAndCacheDocx(updated);
   };
