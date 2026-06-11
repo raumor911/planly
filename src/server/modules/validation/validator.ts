@@ -44,6 +44,14 @@ export class ValidationEngine {
         // El parser arrojará un error si el XML está malformado
         this.parser.parse(xmlContent);
         
+        // 3. Verificación de estándar XML (Microsoft Word estricto)
+        if (xmlContent.startsWith('<?xml')) {
+          const versionMatch = xmlContent.match(/version="([^"]+)"/);
+          if (versionMatch && versionMatch[1] === '1') {
+            errors.push(`Invalid XML version "1" in ${path}. Must be "1.0" for Word compatibility.`);
+          }
+        }
+        
         // Verificación manual de cierre de documento para word/document.xml
         if (path === 'word/document.xml' && !xmlContent.includes('</w:document>')) {
           errors.push('word/document.xml is truncated: missing </w:document> tag.');

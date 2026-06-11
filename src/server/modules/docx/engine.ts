@@ -1,6 +1,6 @@
 import { XMLParser, XMLBuilder } from 'fast-xml-parser';
 import PizZip from 'pizzip';
-import { DocxPayload, TableMatch, DocxSession } from './types';
+import { DocxPayload, DocxSession } from './types';
 import { TemplateInspector } from './inspector';
 
 export class PreservationEngine {
@@ -35,7 +35,7 @@ export class PreservationEngine {
     for (const key of fileKeys) {
       if (key === 'word/document.xml' || key.startsWith('word/header') || key.startsWith('word/footer')) {
         const xml = zip.file(key).asText();
-        const updatedXml = this.processXml(xml, payload, key === 'word/document.xml');
+        const updatedXml = this.processXml(xml, payload, key === 'word/document.xml', key);
         zip.file(key, updatedXml);
       }
     }
@@ -47,10 +47,11 @@ export class PreservationEngine {
     return zip;
   }
 
-  private processXml(xml: string, payload: DocxPayload, isMainDoc: boolean): string {
+  private processXml(xml: string, payload: DocxPayload, isMainDoc: boolean, filePath: string): string {
     // 1. Sanitizador de Tag Splitting (P2)
     // Corrige llaves rotas por Word ej: {</w:t>...<w:t>{
-    const sanitizedXml = this.sanitizeTagSplitting(xml);
+    const { xml: sanitizedXml, replacements } = this.sanitizeTagSplitting(xml);
+    console.log(`[DOCX] sanitizeTagSplitting executed on ${filePath}. Replacements: ${replacements}`);
     
     const jsonObj = this.parser.parse(sanitizedXml);
     
@@ -62,32 +63,58 @@ export class PreservationEngine {
       this.injectTables(jsonObj, payload);
     }
 
-    return this.builder.build(jsonObj);
+    const result = this.builder.build(jsonObj);
+    
+    // C3: Corrección Quirúrgica de Cabecera XML (OpenXML Expert)
+    // El estándar exige version="1.0". Forzamos una cabecera limpia y válida.
+    const validHeader = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+    let cleanXml = result;
+    
+    // Reemplazo robusto de cualquier cabecera vieja o inválida
+    cleanXml = cleanXml.replace(/<\?xml.*\?>/i, validHeader);
+    if (!cleanXml.trim().startsWith('<?xml')) {
+        cleanXml = validHeader + cleanXml;
+    }
+    
+    return cleanXml;
   }
 
   /**
    * P2: Sanitizador de Tag Splitting
    * Une fragmentos de placeholders que Word rompió con etiquetas de corrección u otros nodos.
    */
-  private sanitizeTagSplitting(xml: string): string {
+  private sanitizeTagSplitting(xml: string): { xml: string; replacements: number } {
     // Patrón para detectar fragmentos de placeholders divididos por etiquetas w:
     let cleaned = xml;
+    let replacements = 0;
+
+    const applyReplacement = (pattern: RegExp, replacement: string): void => {
+      cleaned = cleaned.replace(pattern, (...args: string[]) => {
+        replacements++;
+        return replacement.replace(/\$(\d)/g, (_, idx) => args[Number(idx)] ?? '');
+      });
+    };
     
     // 1. Unir llaves iniciales split: { ... {  -> {{
-    cleaned = cleaned.replace(/\{<\/w:t>(?:<[^>]+>)*<w:t>\{/g, '{{');
+    applyReplacement(/\{<\/w:t>(?:<[^>]+>|\s)*<w:t>\{/g, '{{');
     
     // 2. Unir llaves finales split: } ... } -> }}
-    cleaned = cleaned.replace(/\}<\/w:t>(?:<[^>]+>)*<w:t>\}/g, '}}');
+    applyReplacement(/\}<\/w:t>(?:<[^>]+>|\s)*<w:t>\}/g, '}}');
     
-    // 3. Unir contenido de placeholders split: {{ ... TEMA ... }}
-    // Ejecutamos varias veces para manejar múltiples fragmentaciones en un mismo placeholder
-    let prev;
+    // 3. Unir contenido de placeholders split: {{ ... tema ... }}
+    // Ejecutamos varias veces para manejar múltiples fragmentaciones en un mismo placeholder,
+    // incluyendo el caso en que la parte izquierda no tenga texto entre {{ y </w:t>.
+    let prev = '';
     do {
       prev = cleaned;
-      cleaned = cleaned.replace(/(\{\{[^{}]+)<\/w:t>(?:<[^>]+>)*<w:t>([^{}]+\}\})/g, '$1$2');
+      // Unir cualquier texto dentro de {{ }} que esté separado por tags de Word
+      applyReplacement(/(\{\{[^{}]*)<\/w:t>(?:<[^>]+>|\s)*<w:t>([^{}]*\}\})/g, '$1$2');
+
+      // 4. Unir segmentos intermedios antes del cierre final }}
+      applyReplacement(/(\{\{[^{}]*)<\/w:t>(?:<[^>]+>|\s)*<w:t>([^{}]*)<\/w:t>(?:<[^>]+>|\s)*<w:t>/g, '$1$2');
     } while (cleaned !== prev);
 
-    return cleaned;
+    return { xml: cleaned, replacements };
   }
 
   /**
@@ -108,7 +135,8 @@ export class PreservationEngine {
    * Identifica placeholders y tablas en un fragmento XML sin mutarlo.
    */
   public inspect(xml: string): { placeholders: string[]; tablesCount: number } {
-    const jsonObj = this.parser.parse(xml);
+    const sanitized = this.sanitizeTagSplitting(xml);
+    const jsonObj = this.parser.parse(sanitized.xml);
     const placeholders = new Set<string>();
     
     // Función recursiva para buscar tokens
@@ -219,12 +247,20 @@ export class PreservationEngine {
   }
 
   private injectTables(jsonObj: any, payload: DocxPayload): void {
-    const analysis = this.inspector.analyzeDocument(this.builder.build(jsonObj));
+    const xmlContent = this.builder.build(jsonObj);
+    const analysis = this.inspector.analyzeDocument(xmlContent);
     console.log(`[DOCX] Tables detected: ${analysis.tables.length}`);
 
     const tables = this.findAllNodes(jsonObj, 'w:tbl');
 
-    analysis.tables.forEach((match, mIdx) => {
+    // Mapeo de regex para encontrar filas moldes de forma quirúrgica (OpenXML Expert)
+    const rowRegex = /(<w:tr\b[^>]*>[\s\S]*?\{\{tema\}\}[\s\S]*?<\/w:tr>)/i;
+    const match = xmlContent.match(rowRegex);
+    if (match) {
+      console.log("[InsertionAgent] Inyectando en fila:", match[0].substring(0, 50));
+    }
+
+    analysis.tables.forEach((match) => {
       console.log(`[DOCX] Planning table selected: index ${match.tableIndex} (Type: ${match.type})`);
       const targetTable = tables[match.tableIndex];
       if (!targetTable) return;

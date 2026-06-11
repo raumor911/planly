@@ -64,7 +64,12 @@ export class PreservationEngine {
       this.injectTables(jsonObj, payload);
     }
 
-    return this.builder.build(jsonObj);
+    const result = this.builder.build(jsonObj);
+    
+    // C3: Corrección Quirúrgica de Cabecera XML
+    // fast-xml-parser con parseAttributeValue: true convierte "1.0" en 1, lo que corrompe el DOCX para Word.
+    // Forzamos la versión estándar 1.0.
+    return result.replace(/^<\?xml version="1"/, '<?xml version="1.0"');
   }
 
   private injectPlaceholders(node: any, payload: DocxPayload): void {
