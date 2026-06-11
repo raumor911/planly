@@ -46,6 +46,8 @@ type GeneratePreviewResponse =
   | {
       success: true;
       materia?: string;
+      objetivo?: string;
+      clave?: string;
       payload: { sessions: GeneratedSession[] };
     }
   | { success: false; error?: string };
@@ -95,6 +97,20 @@ export default function App() {
       return localStorage.getItem("planly_materiaName") || "Contabilidad de Organizaciones Públicas";
     } catch {
       return "Contabilidad de Organizaciones Públicas";
+    }
+  });
+  const [objetivoGeneral, setObjetivoGeneral] = useState(() => {
+    try {
+      return localStorage.getItem("planly_objetivoGeneral") || "";
+    } catch {
+      return "";
+    }
+  });
+  const [claveMateria, setClaveMateria] = useState(() => {
+    try {
+      return localStorage.getItem("planly_claveMateria") || "";
+    } catch {
+      return "";
     }
   });
   const [nivelEducativo, setNivelEducativo] = useState(() => {
@@ -229,6 +245,20 @@ export default function App() {
       // ignore
     }
   }, [materiaName]);
+  React.useEffect(() => {
+    try {
+      localStorage.setItem("planly_objetivoGeneral", objetivoGeneral);
+    } catch {
+      // ignore
+    }
+  }, [objetivoGeneral]);
+  React.useEffect(() => {
+    try {
+      localStorage.setItem("planly_claveMateria", claveMateria);
+    } catch {
+      // ignore
+    }
+  }, [claveMateria]);
   React.useEffect(() => {
     try {
       localStorage.setItem("planly_nivelEducativo", nivelEducativo);
@@ -504,6 +534,8 @@ export default function App() {
             sesionesOverride: sessionsList,
             templateBase64: templateBase64 || undefined,
             materiaOverride: materiaName,
+            objetivoOverride: objetivoGeneral,
+            claveOverride: claveMateria,
             fechaInicio,
             numSesiones,
             examenPct: `${examenPct}%`,
@@ -587,6 +619,8 @@ export default function App() {
       const resData = (await response.json()) as GeneratePreviewResponse;
       if (resData.success) {
         setMateriaName(resData.materia || materiaName);
+        if (resData.objetivo) setObjetivoGeneral(resData.objetivo);
+        if (resData.clave) setClaveMateria(resData.clave);
         setGeneratedSessions(resData.payload.sessions || []);
         setCurrentStep(5);
         setSuccess(true);

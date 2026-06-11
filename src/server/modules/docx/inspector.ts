@@ -23,8 +23,13 @@ export class TemplateInspector {
 
     tables.forEach((tbl, index) => {
       const match = this.analyzeTable(tbl, index);
-      if (match && match.confidence > 0.3) {
-        matches.push(match);
+      if (match) {
+        console.log(`[TemplateInspector] Table ${index} analysis: type=${match.type}, confidence=${match.confidence}`);
+        if (match.confidence > 0.3) {
+          matches.push(match);
+        }
+      } else {
+        console.log(`[TemplateInspector] Table ${index} analysis: No match found.`);
       }
     });
 
@@ -99,7 +104,14 @@ export class TemplateInspector {
 
   private getCellText(cell: any): string {
     const texts = this.findAllNodes(cell, 'w:t');
-    return texts.map(t => (typeof t === 'string' ? t : t['#text'] || '')).join(' ');
+    return texts.map(t => {
+      if (typeof t === 'string') return t;
+      if (Array.isArray(t)) {
+        const textItem = t.find(item => item['#text'] !== undefined);
+        return textItem ? String(textItem['#text']) : '';
+      }
+      return '';
+    }).join(' ');
   }
 
   private findNode(parent: any, name: string): any {
@@ -162,6 +174,6 @@ export class TemplateInspector {
   }
 
   private isObjective(text: string): boolean {
-    return /objetivo|competencia|particular|prop[oó]sito/i.test(text);
+    return /objetivo|competencia|particular|prop[oó]sito|aprendizaje/i.test(text);
   }
 }

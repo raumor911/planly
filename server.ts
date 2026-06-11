@@ -213,7 +213,13 @@ app.post("/api/curricula/generate", async (req, res) => {
     isPreview = false,
     sesionesOverride = null,
     materiaOverride = "",
-    templateBase64
+    templateBase64,
+    professor = "",
+    period = "26-3",
+    group = "",
+    term = "",
+    schedule = "",
+    shift = ""
   } = req.body;
 
   // Validation of rubric percentages
@@ -235,10 +241,15 @@ app.post("/api/curricula/generate", async (req, res) => {
   try {
     let cleanSubject = "Contabilidad de Organizaciones Públicas";
     let sessions = [];
+    let generalObjective = "Analizar y aplicar los principios de contabilidad gubernamental...";
+    let courseCode = "N/A";
 
     if (hasManualOverride) {
       sessions = sesionesOverride;
       cleanSubject = materiaOverride || "Contabilidad de Organizaciones Públicas";
+      // Si hay override manual, intentamos recuperar el objetivo y clave si se enviaron (opcional)
+      generalObjective = req.body.objetivoOverride || generalObjective;
+      courseCode = req.body.claveOverride || courseCode;
     } else {
       // 1. Structure raw text with the new taxonomic SyllabusParser
       const parsedData = await syllabusParser.parse(temario, sessionsCount);
@@ -253,14 +264,16 @@ app.post("/api/curricula/generate", async (req, res) => {
       }));
 
       if (parsedData.course.name) cleanSubject = parsedData.course.name.trim();
+      if (parsedData.course.generalObjective) generalObjective = parsedData.course.generalObjective.trim();
+      if (parsedData.course.code) courseCode = parsedData.course.code.trim();
     }
 
     // 5. Package payload matching new DocxPayload structure
     const docxPayload: DocxPayload = {
       course: {
         name: cleanSubject,
-        code: "CPP09",
-        generalObjective: "Al término del curso, el estudiante construirá estados financieros y presupuestales..."
+        code: courseCode,
+        generalObjective: generalObjective
       },
       sessions: sessions.map((s: any, idx: number) => ({
         num: s.num || (idx + 1),
@@ -274,13 +287,25 @@ app.post("/api/curricula/generate", async (req, res) => {
         firstPartial: { period: "1er Parcial", items: [{ name: "Examen", percentage: parseInt(examenPct) || 30 }] },
         secondPartial: { period: "2do Parcial", items: [{ name: "Continua", percentage: parseInt(continuaPct) || 40 }] },
         final: { period: "Final", items: [{ name: "Proyecto", percentage: parseInt(plataformaPct) || 30 }] }
-      }
+      },
+      professor,
+      period,
+      group,
+      term,
+      schedule,
+      shift
     };
 
     console.log(`[DOCX] Payload sessions count: ${docxPayload.sessions.length}`);
 
     if (isPreview) {
-      res.json({ success: true, materia: cleanSubject, payload: docxPayload });
+      res.json({ 
+        success: true, 
+        materia: cleanSubject, 
+        objetivo: generalObjective,
+        clave: courseCode,
+        payload: docxPayload 
+      });
       return;
     }
 
@@ -293,19 +318,16 @@ app.post("/api/curricula/generate", async (req, res) => {
       return; 
     } 
  
-    // 1. Tomar la plantilla personalizada del docente y convertirla a Buffer binario de RAM 
-    const templateBuffer = Buffer.from(templateBase64, 'base64'); 
-    
-    // 2. Inicializar el contenedor zip en la memoria efímera del servidor 
-    const zip = new PizZip(templateBuffer); 
-    
-    // 3. El diccionario de datos (docxPayload) ejecuta la cirugía in-place e inserta la información 
-    const outBuffer = await fidelityEngine.process(zip, docxPayload); 
+    // Invocamos el bucle agéntico de generación y sanación a través del orquestador
+    const buffer = await docxOrchestrator.runSafeGeneration({
+      templateBase64,
+      payload: docxPayload
+    });
  
     // 4. Transmisión limpia del flujo resultante directo al navegador 
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"); 
     res.setHeader("Content-Disposition", `attachment; filename="Planeacion_${cleanSubject.replace(/\s+/g, '_')}.docx"`); 
-    res.send(outBuffer);
+    res.send(buffer);
 
   } catch (error: any) {
     console.error("Endpoint generation error: ", error);

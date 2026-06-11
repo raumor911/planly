@@ -7,6 +7,7 @@ import {
   ExecutionMemory 
 } from './types';
 import { PreservationEngine } from './engine';
+import { InsertionAgent } from '../agents/InsertionAgent';
 import { ValidationEngine } from '../validation/validator';
 import { askAgentToHealXML, askAgentToInspectXML } from '../../geminiService';
 
@@ -16,10 +17,12 @@ import { askAgentToHealXML, askAgentToInspectXML } from '../../geminiService';
  */
 export class DocxAgentOrchestrator {
   private preservationEngine: PreservationEngine;
+  private insertionAgent: InsertionAgent;
   private validationEngine: ValidationEngine;
 
   constructor() {
     this.preservationEngine = new PreservationEngine();
+    this.insertionAgent = new InsertionAgent();
     this.validationEngine = new ValidationEngine();
   }
 
@@ -32,7 +35,7 @@ export class DocxAgentOrchestrator {
     const documentXml = zip.file('word/document.xml')?.asText() || '';
 
     // Tools: Inspección técnica local
-    const technicalInfo = this.preservationEngine.inspect(documentXml);
+    const technicalInfo = this.insertionAgent.inspect(documentXml);
 
     // Agente: Inspección inteligente con Gemini
     const agentInspection = await askAgentToInspectXML(documentXml);
@@ -46,7 +49,7 @@ export class DocxAgentOrchestrator {
     };
 
     return {
-      templateFingerprint: `hash_${Date.now()}`, // En producción usar un hash real del buffer
+      templateFingerprint: `hash_${Date.now()}`, 
       riskScore: agentInspection.riskScore,
       issues: agentInspection.issues,
       detectedStructures: {
@@ -79,24 +82,28 @@ export class DocxAgentOrchestrator {
       finalDecision: 'retry'
     };
 
-    let zip = new PizZip(Buffer.from(snapshot.templateBase64, 'base64'));
+    // 1. PreservationEngine prepara el documento base (Preserva media, rels, etc)
+    const templateBuffer = Buffer.from(snapshot.templateBase64, 'base64');
+    const preservedBuffer = await this.preservationEngine.preserve(templateBuffer);
 
     while (memory.attempt <= memory.maxAttempts) {
       console.log(`[DocxAgentOrchestrator] --- Execution Cycle ${memory.attempt}/${memory.maxAttempts} ---`);
       
       try {
-        // ACTION: Safe Simulation / Mutation
-        // El PreservationEngine aplica el plan (o usa heurísticas si no hay plan)
-        zip = await this.preservationEngine.process(zip, snapshot.payload);
-        memory.touchedFiles = ['word/document.xml']; // Simplificado para este ejemplo
+        // 2. InsertionAgent realiza la inyección de datos del syllabus
+        const resultBuffer = this.insertionAgent.compile(preservedBuffer, snapshot.payload);
+        
+        // Recargamos el ZIP para validación
+        const zip = new PizZip(resultBuffer);
+        memory.touchedFiles = ['word/document.xml'];
 
-        // REFLECT: Bucle de Reflexión/Crítica
+        // 3. REFLECT: Bucle de Reflexión/Crítica (Validación final)
         const validation = await this.validationEngine.validate(zip);
         
         if (validation.valid) {
           console.log('[DocxAgentOrchestrator] Reflection: Document is valid. CommitAgent activated.');
           memory.finalDecision = 'commit';
-          return zip.generate({ type: 'nodebuffer', compression: 'DEFLATE' });
+          return resultBuffer;
         }
 
         // Reflection Negativa: Analizar fallos
@@ -128,7 +135,6 @@ export class DocxAgentOrchestrator {
    * HealingAgent: Identifica y repara archivos dañados
    */
   private async healDamagedFiles(zip: PizZip, errorLog: string, memory: ExecutionMemory): Promise<void> {
-    // Por ahora nos enfocamos en document.xml que es donde ocurre el 90% de la corrupción
     const path = 'word/document.xml';
     const currentXml = zip.file(path)?.asText();
     
@@ -146,7 +152,7 @@ export class DocxAgentOrchestrator {
   }
 
   /**
-   * Legacy wrapper para compatibilidad (si es necesario)
+   * Legacy wrapper para compatibilidad
    */
   public async generate(templateBase64: string, payload: DocxPayload): Promise<{ buffer: Buffer; errors?: string[] }> {
     const buffer = await this.runSafeGeneration({ templateBase64, payload });

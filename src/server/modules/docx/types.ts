@@ -36,6 +36,13 @@ export interface DocxPayload {
   sessions: DocxSession[];
   bibliography: BibliographyItem[];
   evaluation: DocxEvaluation;
+  // Campos institucionales opcionales
+  professor?: string;
+  period?: string;
+  group?: string;
+  term?: string;
+  schedule?: string;
+  shift?: string;
 }
 
 export interface TableRoleMap {
