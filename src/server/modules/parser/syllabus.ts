@@ -55,19 +55,21 @@ export class SyllabusParser {
    * Realiza un análisis taxonómico infalible de temarios académicos.
    * La firma se mantiene como Promise<any> por requerimiento técnico.
    */
-  public async parse(text: string): Promise<any> {
+  public async parse(text: string, numWeeks: number = 14): Promise<any> {
     const instructions = `Actúa como un clasificador curricular universitario riguroso. Tu objetivo es realizar un análisis taxonómico infalible del temario académico proporcionado.
     
     INSTRUCCIONES DE PROCESAMIENTO:
+    - Divide el contenido en exactamente ${numWeeks} sesiones/semanas. 
+    - No agrupes todo en una sola sesión. Distribuye los temas de forma lógica a lo largo de las ${numWeeks} sesiones.
     - Normaliza acentos, mayúsculas y espacios para identificar variaciones de cabeceras equivalentes a: DENOMINACIÓN DE LA ASIGNATURA, FINES DEL APRENDIZAJE, CONTENIDO TEMÁTICO, ACTIVIDADES DE APRENDIZAJE y CRITERIOS DE EVALUACIÓN.
     
     REGLAS DE EXCLUSIÓN SEMÁNTICA:
     - REGLA DE EXCLUSIÓN DE TEMAS: Un tema principal válido solo existe si está bajo la sección temática, posee numeración entera o subtemas asociados (ej. 1.1, 1.2). Queda estrictamente PROHIBIDO clasificar actividades, tareas, evidencias, porcentajes, recursos o libros de bibliografía como parte de los 'topics'.
     - REGLA DE RUIDO ESTRUCTURAL: Si aparece una numeración aislada sin título asociado (ej. "2.", "4.", "8."), debe ignorarse por completo. No crees temas vacíos.
-    - CLASIFICACIÓN DE ACTIVIDADES: Todo lo que describa diseños de trípticos, mapas sinópticos o análisis de casos debe ser aislado como 'estrategia' o 'evidencia' dentro del arreglo de actividades.
+    - CLASIFICACIÓN DE ACTIVIDADES: Todo lo que describa diseños de trípticos, mapas sinópticos o análisis de casos debe ser aislado como 'activity' dentro del arreglo de sesiones.
     
     ESPECIFICACIONES DEL FORMATO:
-    - Genera una estructura JSON limpia y validable.
+    - Genera una estructura JSON limpia y validable con exactamente ${numWeeks} elementos en el array 'sessions'.
     - Si detectas ambigüedades o los porcentajes de evaluación no suman 100%, deposita una alerta descriptiva en el campo 'warnings'.`;
 
     const responseSchema: Schema = {

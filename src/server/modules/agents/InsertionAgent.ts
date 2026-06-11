@@ -97,7 +97,9 @@ export class InsertionAgent {
       case 'activity':
         return session.activity || session.strategy || '';
       case 'resources':
-        return session.resources || '';
+        return session.resources || (session.didacticResources ? session.didacticResources.join('\n') : '');
+      case 'didacticResources':
+        return session.didacticResources ? session.didacticResources.join('\n') : (session.resources || '');
       case 'evidence':
         return session.evidence || '';
       case 'evaluation':
@@ -176,18 +178,24 @@ export class InsertionAgent {
           const replacements = {
               num: session.num || "",
               tema: session.topic || session.tema || "",
+              topic: session.topic || session.tema || "",
               actividad: session.activity || session.actividad || "",
+              activity: session.activity || session.actividad || "",
               objetivo: session.objective || session.objetivo || "",
-              recursos: session.resources || ""
+              objective: session.objective || session.objetivo || "",
+              recursos: session.resources || (session.didacticResources ? session.didacticResources.join('\n') : ""),
+              resources: session.resources || (session.didacticResources ? session.didacticResources.join('\n') : ""),
+              RECURSOS_DIDACTICOS: session.didacticResources ? session.didacticResources.join('\n') : (session.resources || ""),
+              DIDACTIC_RESOURCES: session.didacticResources ? session.didacticResources.join('\n') : (session.resources || "")
           };
 
           for (const [key, val] of Object.entries(replacements)) {
-              row = row.replace(new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, "g"), this.escapeXml(String(val)));
+              row = row.replace(new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, "g"), () => this.escapeXml(String(val)));
           }
           generatedRowsXml += row;
       }
 
-      xml = xml.replace(rowTemplate, generatedRowsXml);
+      xml = xml.replace(rowTemplate, () => generatedRowsXml);
       
       // Inyectar placeholders de curso (fuera de la tabla)
       const courseInfo = (syllabus as any).course || {};

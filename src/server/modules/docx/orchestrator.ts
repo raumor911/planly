@@ -8,6 +8,7 @@ import {
 } from './types';
 import { PreservationEngine } from './engine';
 import { InsertionAgent } from '../agents/InsertionAgent';
+import { DidacticResourceAgent } from '../agents/DidacticResourceAgent';
 import { ValidationEngine } from '../validation/validator';
 import { TemplateScanner } from './TemplateScanner';
 import { askAgentToHealXML, askAgentToInspectXML } from '../../geminiService';
@@ -19,11 +20,13 @@ import { askAgentToHealXML, askAgentToInspectXML } from '../../geminiService';
 export class DocxAgentOrchestrator {
   private preservationEngine: PreservationEngine;
   private insertionAgent: InsertionAgent;
+  private didacticResourceAgent: DidacticResourceAgent;
   private validationEngine: ValidationEngine;
 
   constructor() {
     this.preservationEngine = new PreservationEngine();
     this.insertionAgent = new InsertionAgent();
+    this.didacticResourceAgent = new DidacticResourceAgent();
     this.validationEngine = new ValidationEngine();
   }
 
@@ -93,7 +96,11 @@ export class DocxAgentOrchestrator {
       try {
         // 2. InsertionAgent realiza la inyección de datos del syllabus
         const docxPayload = snapshot.payload;
-        const sesiones = (docxPayload.sessions || docxPayload) as any[];
+        let sesiones = (docxPayload.sessions || docxPayload) as any[];
+        
+        // FASE INTERMEDIA: Enriquecimiento de recursos didácticos
+        console.log('[DocxAgentOrchestrator] Enriqueciendo sesiones con DidacticResourceAgent...');
+        sesiones = await this.didacticResourceAgent.enrichSessions(sesiones);
         
         console.log(`[DocxAgentOrchestrator] Preparando inyección para materia: ${docxPayload.course?.name}`);
         console.log(`[DocxAgentOrchestrator] Sesiones detectadas: ${sesiones.length || 0}`);

@@ -36,10 +36,12 @@ type TemplateMeta = {
 
 type GeneratedSession = {
   num: number;
-  fecha: string;
-  tema: string;
-  actividad: string;
-  objetivo: string;
+  date: string;
+  topic: string;
+  activity: string;
+  objective: string;
+  resources?: string;
+  didacticResources?: string[];
 };
 
 type GeneratePreviewResponse =
@@ -664,13 +666,13 @@ export default function App() {
 
   const handleUpdateSessionRow = (
     idx: number,
-    field: "tema" | "actividad" | "objetivo",
+    field: "topic" | "activity" | "objective",
     value: string
   ) => {
     const updated = [...generatedSessions];
-    if (field === "tema") updated[idx].tema = value;
-    else if (field === "actividad") updated[idx].actividad = value;
-    else if (field === "objetivo") updated[idx].objetivo = value;
+    if (field === "topic") updated[idx].topic = value;
+    else if (field === "activity") updated[idx].activity = value;
+    else if (field === "objective") updated[idx].objective = value;
     setGeneratedSessions(updated);
     generateAndCacheDocx(updated);
   };
@@ -1128,42 +1130,57 @@ export default function App() {
                               <th className="p-3">Tema</th>
                               <th className="p-3">Actividad</th>
                               <th className="p-3">Objetivo</th>
+                              <th className="p-3">Recursos</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-200/40 text-xs">
                             {generatedSessions.map((row, rIdx) => (
                               <tr key={rIdx} className="hover:bg-slate-50/70 transition-colors duration-150">
                                 <td className="p-3 text-center font-mono font-extrabold text-slate-500">{row.num}</td>
-                                <td className="p-3 font-mono text-[11px] text-slate-600">{row.fecha}</td>
+                                <td className="p-3 font-mono text-[11px] text-slate-600">{row.date}</td>
                                 <td className="p-2">
                                   <textarea
-                                    value={row.tema}
-                                    onChange={(e) => handleUpdateSessionRow(rIdx, "tema", e.target.value)}
+                                    value={row.topic}
+                                    onChange={(e) => handleUpdateSessionRow(rIdx, "topic", e.target.value)}
                                     className="premium-cell-textarea w-full bg-transparent outline-none rounded-lg p-2 text-slate-800 font-medium resize-none text-[11.5px] leading-snug placeholder:text-slate-400 focus:bg-white/80 focus:ring-1 focus:ring-[#1677D2]/35 hover:bg-white/40 transition-colors duration-150"
                                     rows={2}
                                   />
                                 </td>
                                 <td className="p-2">
                                   <textarea
-                                    value={row.actividad}
-                                    onChange={(e) => handleUpdateSessionRow(rIdx, "actividad", e.target.value)}
+                                    value={row.activity}
+                                    onChange={(e) => handleUpdateSessionRow(rIdx, "activity", e.target.value)}
                                     className="premium-cell-textarea w-full bg-transparent outline-none rounded-lg p-2 text-slate-600 resize-none text-[11px] leading-snug placeholder:text-slate-400 focus:bg-white/80 focus:ring-1 focus:ring-[#1677D2]/35 hover:bg-white/40 transition-colors duration-150"
                                     rows={2}
                                   />
                                 </td>
                                 <td className="p-2">
                                   <textarea
-                                    value={row.objetivo}
-                                    onChange={(e) => handleUpdateSessionRow(rIdx, "objetivo", e.target.value)}
+                                    value={row.objective}
+                                    onChange={(e) => handleUpdateSessionRow(rIdx, "objective", e.target.value)}
                                     className="premium-cell-textarea w-full bg-transparent outline-none rounded-lg p-2 text-slate-600 resize-none text-[11px] leading-snug placeholder:text-slate-400 focus:bg-white/80 focus:ring-1 focus:ring-[#1677D2]/35 hover:bg-white/40 transition-colors duration-150"
                                     rows={2}
+                                  />
+                                </td>
+                                <td className="p-2">
+                                  <textarea
+                                    value={row.didacticResources ? row.didacticResources.join(', ') : (row.resources || '')}
+                                    onChange={(e) => {
+                                      const updated = [...generatedSessions];
+                                      updated[rIdx].didacticResources = e.target.value.split(',').map(s => s.trim());
+                                      setGeneratedSessions(updated);
+                                      generateAndCacheDocx(updated);
+                                    }}
+                                    className="premium-cell-textarea w-full bg-transparent outline-none rounded-lg p-2 text-slate-500 italic resize-none text-[10px] leading-snug placeholder:text-slate-400 focus:bg-white/80 focus:ring-1 focus:ring-[#1677D2]/35 hover:bg-white/40 transition-colors duration-150"
+                                    rows={2}
+                                    placeholder="Recursos didácticos..."
                                   />
                                 </td>
                               </tr>
                             ))}
                             {generatedSessions.length === 0 && (
                               <tr>
-                                <td colSpan={5} className="p-6 text-center text-xs text-slate-500">
+                                <td colSpan={6} className="p-6 text-center text-xs text-slate-500">
                                   Aún no hay sesiones. Vuelve al Paso 4 para generar la planeación.
                                 </td>
                               </tr>

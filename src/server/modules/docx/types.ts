@@ -13,6 +13,7 @@ export interface DocxSession {
   evidence?: string;
   evaluation?: string;
   bibliography?: string;
+  didacticResources?: string[];
   dateReal?: string;
   notes?: string;
 }
