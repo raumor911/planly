@@ -40,6 +40,26 @@ const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const DEFAULT_MODEL = "gemini-2.5-flash";
 
 /**
+ * Normalizes Gemini model names by removing redundant prefixes and upgrading obsolete versions.
+ */
+function normalizeModelName(modelName: string): string {
+  let normalized = modelName;
+
+  // 1. Remove redundant "gemini/" prefix if present (canonical normalization)
+  if (normalized.startsWith("gemini/")) {
+    normalized = normalized.replace(/^gemini\//, "");
+  }
+
+  // 2. Upgrade retired 1.5 models to 2.5 family as per Google's latest retirement policy
+  if (normalized.includes("1.5") || normalized.includes("flash-latest") || normalized.includes("pro-latest")) {
+    console.log(`[Gemini Engine] Normalizing/Upgrading model "${modelName}" -> "${DEFAULT_MODEL}"`);
+    return DEFAULT_MODEL;
+  }
+
+  return normalized;
+}
+
+/**
  * Robust retry utility to call Gemini API, attempting multiple models and retries before giving up.
  */
 export async function callGeminiWithRetry(
@@ -49,11 +69,8 @@ export async function callGeminiWithRetry(
 ): Promise<any> {
   const ai = getGeminiClient();
 
-  // Sanitización inicial del parámetro preferredModel
-  if (preferredModel.includes("1.5") || preferredModel.includes("flash-latest") || preferredModel.includes("pro-latest")) {
-    console.log(`[Gemini Engine] Sanitizing preferredModel "${preferredModel}" -> "${DEFAULT_MODEL}"`);
-    preferredModel = DEFAULT_MODEL;
-  }
+  // Normalización inicial del parámetro preferredModel
+  preferredModel = normalizeModelName(preferredModel);
 
   // Modelos vigentes de la familia moderna de Google Gemini (Serie 2.5 / 2.0)
   const modelsToTry = [
@@ -67,17 +84,13 @@ export async function callGeminiWithRetry(
   let lastError: any = null;
 
   for (let model of modelsToTry) {
-    // Desinfectar el objeto config para evitar que arrastre modelos viejos o inexistentes
-    const finalConfig = { ...config };
-    if (finalConfig.model && (finalConfig.model.includes("1.5") || finalConfig.model.includes("flash-latest") || finalConfig.model.includes("pro-latest"))) {
-      console.log(`[Gemini Engine] Sanitizing config model "${finalConfig.model}" -> "${DEFAULT_MODEL}"`);
-      finalConfig.model = DEFAULT_MODEL;
-    }
+    // Normalizar el modelo del bucle por si acaso
+    model = normalizeModelName(model);
 
-    // Forzar el uso de modelos vigentes si se detecta basura externa o modelos obsoletos
-    if (model.includes("1.5") || model.includes("flash-latest") || model.includes("pro-latest")) {
-      console.log(`[Gemini Engine] Sanitizing obsolete model in loop "${model}" -> "${DEFAULT_MODEL}"`);
-      model = DEFAULT_MODEL;
+    // Desinfectar el objeto config para evitar que arrastre modelos viejos o malformados
+    const finalConfig = { ...config };
+    if (finalConfig.model) {
+      finalConfig.model = normalizeModelName(finalConfig.model);
     }
 
     for (let attempt = 1; attempt <= maxRetriesPerModel; attempt++) {
