@@ -238,7 +238,7 @@ app.post("/api/curricula/generate", async (req, res) => {
     return;
   }
 
-  const sessionsCount = Math.max(1, Math.min(24, Number(numSesiones) || 14));
+  const sessionsCount = Math.max(1, Math.min(60, Number(numSesiones) || 14));
 
   try {
     let cleanSubject = "Contabilidad de Organizaciones Públicas";
@@ -262,7 +262,7 @@ app.post("/api/curricula/generate", async (req, res) => {
         week: s.week || String(Math.floor(idx / 1) + 1), // Simplificación: 1 sesión por semana si no viene
         date: getSessionDate(idx, fechaInicio),
         unit: s.unit || "",
-        objective: s.objective || parsedData.course.generalObjective,
+        objective: s.objective || "",
         topic: s.topic || "",
         subtopics: s.subtopics || [],
         content: s.content || "",
@@ -280,6 +280,7 @@ app.post("/api/curricula/generate", async (req, res) => {
       // Enriquecimiento con recursos didácticos
       console.log("[SERVER] Enriqueciendo sesiones con DidacticResourceAgent...");
       sessions = await didacticResourceAgent.enrichSessions(sessions, temario);
+      console.log(`[SERVER] Enriquecimiento completado. Primera sesión recursos:`, sessions[0]?.didacticResources);
     }
 
     // 5. Package payload matching new DocxPayload structure
@@ -307,6 +308,7 @@ app.post("/api/curricula/generate", async (req, res) => {
     console.log(`[DOCX] Payload sessions count: ${docxPayload.sessions.length}`);
 
     if (isPreview) {
+      console.log("[SERVER] Enviando preview al cliente con", sessions.length, "sesiones.");
       res.json({ 
         success: true, 
         materia: cleanSubject, 

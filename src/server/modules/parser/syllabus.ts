@@ -65,6 +65,7 @@ export class SyllabusParser {
     
     REGLAS DE EXCLUSIÓN SEMÁNTICA:
     - REGLA DE EXCLUSIÓN DE TEMAS: Un tema principal válido solo existe si está bajo la sección temática, posee numeración entera o subtemas asociados (ej. 1.1, 1.2). Queda estrictamente PROHIBIDO clasificar actividades, tareas, evidencias, porcentajes, recursos o libros de bibliografía como parte de los 'topics'.
+    - REGLA DE OBJETIVOS ESPECÍFICOS: El campo 'objective' de cada sesión DEBE ser un objetivo particular y único, redactado por ti basándote EXCLUSIVAMENTE en los temas y subtemas de esa sesión. Queda PROHIBIDO repetir el objetivo general del curso o usar el mismo objetivo en varias sesiones. Cada sesión debe tener su propia meta de aprendizaje específica.
     - REGLA DE RUIDO ESTRUCTURAL: Si aparece una numeración aislada sin título asociado (ej. "2.", "4.", "8."), debe ignorarse por completo. No crees temas vacíos.
     - CLASIFICACIÓN DE ACTIVIDADES: Todo lo que describa diseños de trípticos, mapas sinópticos o análisis de casos debe ser aislado como 'activity' dentro del arreglo de sesiones.
     
@@ -105,7 +106,7 @@ export class SyllabusParser {
               evaluation: { type: Type.STRING },
               bibliography: { type: Type.STRING }
             },
-            required: ["num", "topic", "activity", "resources"]
+            required: ["num", "topic", "activity", "resources", "objective"]
           }
         },
         bibliography: {

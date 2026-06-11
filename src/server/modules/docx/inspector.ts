@@ -85,25 +85,25 @@ export class TemplateInspector {
       const text = this.getCellText(cell).toLowerCase();
       
       // Sistema de puntaje semántico
-      if (this.isRole(text, ['num', 'semana', 'clase', 'no.', 'número', 'secuencia', 'encuentro'])) {
+      if (this.isRole(text, ['num', 'semana', 'clase', 'no.', 'número', 'sesión', 'encuentro', 'secuencia'])) {
         roles[cIdx] = 'num';
         score += 2;
-      } else if (this.isRole(text, ['fecha', 'fecha programada', 'calendario', 'cronograma', 'periodo'])) {
+      } else if (this.isRole(text, ['fecha', 'fecha programada', 'calendario', 'cronograma', 'periodo', 'programada'])) {
         roles[cIdx] = 'date';
         score += 2;
-      } else if (this.isRole(text, ['fecha real', 'fecha realizada', 'fecha de ejecución'])) {
+      } else if (this.isRole(text, ['fecha real', 'fecha realizada', 'fecha de ejecución', 'ejecución'])) {
         roles[cIdx] = 'dateReal';
         score += 2;
-      } else if (this.isRole(text, ['objetivo', 'objetivo particular', 'propósito', 'competencia', 'aprendizaje esperado'])) {
+      } else if (this.isRole(text, ['objetivo', 'objetivo particular', 'propósito', 'competencia', 'aprendizaje esperado', 'particular'])) {
         roles[cIdx] = 'objective';
         score += 3;
-      } else if (this.isRole(text, ['tema', 'temas', 'subtemas', 'contenido', 'unidad', 'saber', 'eje temático'])) {
+      } else if (this.isRole(text, ['tema', 'temas', 'subtemas', 'contenido', 'unidad', 'saber', 'eje temático', 'temario', 'subtema'])) {
         roles[cIdx] = 'topic';
         score += 3;
-      } else if (this.isRole(text, ['actividad', 'actividades', 'estrategia', 'didáctica', 'secuencia didáctica', 'desarrollo'])) {
+      } else if (this.isRole(text, ['actividad', 'actividades', 'estrategia', 'didáctica', 'secuencia didáctica', 'desarrollo', 'aprendizaje', 'enseñanza'])) {
         roles[cIdx] = 'activity';
         score += 3;
-      } else if (this.isRole(text, ['recursos', 'materiales', 'plataforma', 'tic'])) {
+      } else if (this.isRole(text, ['recurso', 'recursos', 'material', 'materiales', 'plataforma', 'tic', 'didáctico', 'didácticos'])) {
         roles[cIdx] = 'resources';
         score += 2;
       } else if (this.isRole(text, ['evidencia', 'producto', 'entregable'])) {
@@ -122,11 +122,11 @@ export class TemplateInspector {
   }
 
   private isRole(text: string, keywords: string[]): boolean {
+    const normalize = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const normalizedText = normalize(text);
     return keywords.some(kw => {
-      // Búsqueda exacta o contenida con límites de palabra
-      const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const regex = new RegExp(`\\b${escaped}\\b`, 'i');
-      return regex.test(text) || text.includes(kw.toLowerCase());
+      const normalizedKw = normalize(kw);
+      return normalizedText.includes(normalizedKw);
     });
   }
 

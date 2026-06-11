@@ -76,23 +76,26 @@ export class TemplateScanner {
       const text = this.getCellText(cell).toLowerCase();
 
       // Reglas de puntaje semántico (basado en diseño universal)
-      if (this.isRole(text, ['num', 'semana', 'clase', 'no.', 'número', 'sesión'])) {
+      if (this.isRole(text, ['num', 'semana', 'clase', 'no.', 'número', 'sesión', 'encuentro', 'secuencia'])) {
         roles[cIdx] = 'num';
         score += 2;
-      } else if (this.isRole(text, ['objetivo', 'propósito', 'competencia'])) {
+      } else if (this.isRole(text, ['objetivo', 'propósito', 'competencia', 'aprendizaje esperado', 'particular'])) {
         roles[cIdx] = 'objective';
         score += 3;
-      } else if (this.isRole(text, ['tema', 'contenido', 'unidad', 'eje'])) {
+      } else if (this.isRole(text, ['tema', 'contenido', 'unidad', 'eje', 'temario', 'subtema', 'subtemas'])) {
         roles[cIdx] = 'topic';
         score += 3;
-      } else if (this.isRole(text, ['actividad', 'estrategia', 'didáctica', 'enseñanza'])) {
+      } else if (this.isRole(text, ['actividad', 'estrategia', 'didáctica', 'enseñanza', 'aprendizaje', 'secuencia didáctica'])) {
         roles[cIdx] = 'activity';
         score += 3;
-      } else if (this.isRole(text, ['recursos', 'materiales', 'bibliografía', 'tic'])) {
+      } else if (this.isRole(text, ['recurso', 'recursos', 'material', 'materiales', 'bibliografía', 'tic', 'didáctico', 'didácticos', 'plataforma'])) {
         roles[cIdx] = 'resources';
         score += 2;
-      } else if (this.isRole(text, ['fecha', 'calendario', 'cronograma'])) {
+      } else if (this.isRole(text, ['fecha', 'calendario', 'cronograma', 'periodo', 'programada'])) {
         roles[cIdx] = 'date' as any;
+        score += 2;
+      } else if (this.isRole(text, ['fecha real', 'fecha realizada', 'ejecución'])) {
+        roles[cIdx] = 'dateReal' as any;
         score += 2;
       } else if (this.isRole(text, ['evidencia', 'producto', 'entregable'])) {
         roles[cIdx] = 'evidence';
@@ -104,7 +107,12 @@ export class TemplateScanner {
   }
 
   private isRole(text: string, keywords: string[]): boolean {
-    return keywords.some(kw => text.includes(kw));
+    const normalize = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const normalizedText = normalize(text);
+    return keywords.some(kw => {
+      const normalizedKw = normalize(kw);
+      return normalizedText.includes(normalizedKw);
+    });
   }
 
   private getCellText(cell: any): string {

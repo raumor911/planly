@@ -15,12 +15,22 @@ export class DidacticResourceAgent {
 
     const enrichedSessions = await Promise.all(
       sessions.map(async (session) => {
-        // Si ya tiene recursos y no están vacíos, los respetamos
-        if (session.didacticResources && session.didacticResources.length > 0) {
-          return session;
+        // 1. Preservar si ya tiene recursos (didacticResources o resources no vacío)
+        const hasDidactic = Array.isArray(session.didacticResources) && session.didacticResources.length > 0;
+        const hasResources = typeof session.resources === 'string' && session.resources.trim().length > 5;
+
+        if (hasDidactic || hasResources) {
+          console.log(`[DidacticResourceAgent] Sesión ${session.num}: Usando recursos existentes.`);
+          return {
+            ...session,
+            didacticResources: hasDidactic ? session.didacticResources : [session.resources as string]
+          };
         }
 
+        // 2. Sugerir recursos si está vacío
         const resources = await this.suggestResources(session.topic || "", originalText);
+        console.log(`[DidacticResourceAgent] Sesión ${session.num}: Sugeridos ${resources.length} recursos.`);
+        
         return {
           ...session,
           didacticResources: resources,
@@ -36,34 +46,43 @@ export class DidacticResourceAgent {
    * Consulta a la IA para sugerir recursos basados en el tema y el contexto original.
    */
   private async suggestResources(topic: string, originalText?: string): Promise<string[]> {
-    if (!topic) return [];
+    if (!topic || topic.trim().length < 3) return [];
 
-    const prompt = `Analiza el siguiente tema de clase: '${topic}'. 
+    const prompt = `Actúa como un estratega instruccional experto.
     
-    ${originalText ? `Primero, revisa si en el texto fuente del temario se mencionan recursos específicos para este tema. Texto fuente: "${originalText.substring(0, 2000)}..."` : ""}
+    TAREA: Define 3 recursos didácticos específicos y aplicables para una sesión sobre el tema: "${topic}".
     
-    Si no se mencionan explícitamente, actúa como un diseñador instruccional experto y genera 3 recursos didácticos de alta calidad (ej. enlaces a herramientas, tipos de ejercicios, materiales visuales, simuladores, bibliografía específica) que sean altamente relevantes y prácticos para este tema.
+    REGLAS:
+    1. Si en el contexto proporcionado "${originalText ? originalText.substring(0, 1500) : 'N/A'}" ya se mencionan recursos, prioriza y formaliza esos.
+    2. Si no hay recursos en el contexto, sugiere 3 recursos innovadores (ej. plataformas interactivas, tipo de ejercicio práctico, herramienta de visualización o repositorio académico).
+    3. Asegura que cada recurso tenga una relación directa y lógica con la naturaleza del tema.
+    4. Respuesta: Devuelve exclusivamente un JSON con este formato: {"resources": ["recurso1", "recurso2", "recurso3"]}. No añadas explicaciones adicionales.
     
-    Devuelve solo una lista JSON con el formato: {"recursos": ["recurso1", "recurso2", "recurso3"]}.`;
+    Respuesta JSON:`;
 
     const config = {
       responseMimeType: "application/json",
       responseSchema: {
         type: Type.OBJECT,
         properties: {
-          recursos: {
+          resources: {
             type: Type.ARRAY,
             items: { type: Type.STRING }
           }
         },
-        required: ["recursos"]
+        required: ["resources"]
       }
     };
 
     try {
       const response = await callGeminiWithRetry(prompt, config);
-      const result = JSON.parse(response.text || '{"recursos": []}');
-      return result.recursos || [];
+      const text = response.text || "";
+      
+      // Limpieza defensiva del JSON por si Gemini incluye markdown
+      const cleanJson = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+      const result = JSON.parse(cleanJson || '{"resources": []}');
+      
+      return Array.isArray(result.resources) ? result.resources : [];
     } catch (error) {
       console.error(`[DidacticResourceAgent] Error sugiriendo recursos para "${topic}":`, error);
       return [];

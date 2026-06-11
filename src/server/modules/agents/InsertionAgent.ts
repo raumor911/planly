@@ -185,6 +185,7 @@ export class InsertionAgent {
               objective: session.objective || session.objetivo || "",
               recursos: session.resources || (session.didacticResources ? session.didacticResources.join('\n') : ""),
               resources: session.resources || (session.didacticResources ? session.didacticResources.join('\n') : ""),
+              RECURSOS: session.didacticResources ? session.didacticResources.join('\n') : (session.resources || ""),
               RECURSOS_DIDACTICOS: session.didacticResources ? session.didacticResources.join('\n') : (session.resources || ""),
               DIDACTIC_RESOURCES: session.didacticResources ? session.didacticResources.join('\n') : (session.resources || "")
           };
@@ -202,7 +203,12 @@ export class InsertionAgent {
       const courseReplacements: Record<string, string> = {
         'NOMBRE_ASIGNATURA': courseInfo.name || "",
         'OBJETIVO_GENERAL': courseInfo.generalObjective || "",
-        'CLAVE': courseInfo.code || ""
+        'CLAVE': courseInfo.code || "",
+        'TOTAL_SESIONES': String(syllabus.length),
+        'SESIONES_TOTALES': String(syllabus.length),
+        'SESIONES_POR_CUATRIMESTRE': String(syllabus.length),
+        'SESIONES_POR_SEMESTRE': String(syllabus.length),
+        'SESIONES_POR_CICLO': String(syllabus.length),
       };
 
       for (const [key, val] of Object.entries(courseReplacements)) {
@@ -213,21 +219,25 @@ export class InsertionAgent {
       return zip.generate({ type: "nodebuffer", compression: "DEFLATE" });
     } else {
       // MODO B/C: Usar lógica de mapeo semántico (Legacy/Mejorado)
-      return this.legacyCompile(templateBuffer, syllabus);
+      return this.legacyCompile(templateBuffer, syllabus, mapping);
     }
   }
 
   /**
    * Mantiene la lógica original para compatibilidad y modos complejos
    */
-  private legacyCompile(templateBuffer: Buffer, payload: any): Buffer {
+  private legacyCompile(
+    templateBuffer: Buffer, 
+    payload: any, 
+    mapping?: { mode: 'A' | 'B' | 'C', columns?: Record<number, string> }
+  ): Buffer {
     const zip = new PizZip(templateBuffer);
     const fileKeys = Object.keys(zip.files);
 
     for (const key of fileKeys) {
       if (key === 'word/document.xml' || key.startsWith('word/header') || key.startsWith('word/footer')) {
         const xml = zip.file(key).asText();
-        const updatedXml = this.processXml(xml, payload, key === 'word/document.xml');
+        const updatedXml = this.processXml(xml, payload, key === 'word/document.xml', mapping);
         zip.file(key, updatedXml);
       }
     }
@@ -235,7 +245,12 @@ export class InsertionAgent {
     return zip.generate({ type: 'nodebuffer', compression: 'DEFLATE' });
   }
 
-  private processXml(xml: string, payload: any, isMainDoc: boolean): string {
+  private processXml(
+    xml: string, 
+    payload: any, 
+    isMainDoc: boolean,
+    mapping?: { mode: 'A' | 'B' | 'C', columns?: Record<number, string> }
+  ): string {
     const sanitizedXml = this.sanitizeTagSplitting(xml);
     const jsonObj = this.parser.parse(sanitizedXml);
     
@@ -258,7 +273,7 @@ export class InsertionAgent {
 
     // 2. Inyectar tablas (Solo en documento principal)
     if (isMainDoc) {
-      this.injectTables(jsonObj, finalPayload);
+      this.injectTables(jsonObj, finalPayload, mapping);
     }
 
     const result = this.builder.build(jsonObj);
@@ -325,9 +340,12 @@ export class InsertionAgent {
       '{{HORARIO}}': (payload as any).schedule || '',
       '{{TURNO}}': (payload as any).shift || '',
       '{{TOTAL_SESIONES}}': String(payload.sessions.length),
+      '{{SESIONES_TOTALES}}': String(payload.sessions.length),
+      '{{SESIONES_POR_CUATRIMESTRE}}': String(payload.sessions.length),
+      '{{SESIONES_POR_SEMESTRE}}': String(payload.sessions.length),
+      '{{SESIONES_POR_CICLO}}': String(payload.sessions.length),
     };
 
-    const upperText = text.toUpperCase();
     for (const [token, value] of Object.entries(tokens)) {
       // Crear regex flexible que permita espacios opcionales: {{ tema }} o {{tema}}
       const escapedToken = token
@@ -345,41 +363,51 @@ export class InsertionAgent {
     targetObj['#text'] = text;
   }
 
-  private injectTables(jsonObj: any, payload: DocxPayload): void {
+  private injectTables(
+    jsonObj: any, 
+    payload: DocxPayload,
+    mapping?: { mode: 'A' | 'B' | 'C', columns?: Record<number, string> }
+  ): void {
     const xmlContent = this.builder.build(jsonObj);
-    const analysis = this.inspector.analyzeDocument(xmlContent);
     const tables = this.findAllNodes(jsonObj, 'w:tbl');
 
-    // Validación de fila molde (OpenXML Expert)
-    // Diagnóstico temporal (Protocolo de Validación)
-    const tempMatch = xmlContent.match(/<w:tr[\s\S]*?tema[\s\S]*?<\/w:tr>/i);
-    if (!tempMatch) {
-      console.log("[DEBUG] No se encontró ninguna fila con la palabra 'tema'. Inspecciona si Word cambió el formato.");
+    let tableMatches: any[] = [];
+
+    // Si recibimos un mapping externo (vía Orchestrator/TemplateScanner), lo priorizamos
+    if (mapping && mapping.mode === 'B' && mapping.columns) {
+      console.log(`[InsertionAgent] Usando mapping externo (Modo B) con ${Object.keys(mapping.columns).length} columnas.`);
+      
+      // Intentamos encontrar la tabla basándonos en el mapping
+      // Como el mapping viene de TemplateScanner, y TemplateScanner busca la mejor tabla,
+      // aquí deberíamos saber a qué tabla se refiere.
+      // Pero TemplateScanner solo devuelve el índice de la tabla en el XML.
+      
+      // Para simplificar, si hay un mapping, lo aplicamos a la tabla detectada por el inspector
+      // o usamos el índice proporcionado por el scanner si pudiéramos (pero mapping no lo trae).
+      
+      // Mejor: Si hay mapping, lo usamos para complementar el análisis del inspector.
+      const analysis = this.inspector.analyzeDocument(xmlContent);
+      tableMatches = analysis.tables.map(match => {
+        if (match.type === 'sessions') {
+          return { ...match, roles: { ...match.roles, ...mapping.columns } };
+        }
+        return match;
+      });
     } else {
-      console.log("[DEBUG] Fila detectada. Longitud XML de fila:", tempMatch[0].length);
+      const analysis = this.inspector.analyzeDocument(xmlContent);
+      tableMatches = analysis.tables;
     }
 
-    // Regex más robusto para encontrar la fila molde
-    // Busca "{{tema}}" incluso si tiene espacios o está fragmentado entre etiquetas XML
-    const rowRegex = /(<w:tr\b[^>]*>[\s\S]*?\{\{[\s\S]*?tema[\s\S]*?\}\}[\s\S]*?<\/w:tr>)/i;
-    const match = xmlContent.match(rowRegex);
-    console.log(`[DOCX] Template row found: ${!!match}`);
-    if (match) {
-      console.log("[InsertionAgent] Inyectando en fila:", match[0].substring(0, 50));
-    }
-
-    analysis.tables.forEach((match, tMatchIdx) => {
+    tableMatches.forEach((match, tMatchIdx) => {
       const mode = match.confidence > 0.8 ? 'MODO A (Placeholders)' : 'MODO B (Semántico)';
-      console.log(`[DOCX] Mode selected: ${mode}`);
-      console.log(`[DOCX] Tables detected: ${analysis.tables.length}`);
-      console.log(`[DOCX] Selected table score: ${(match.confidence * 15).toFixed(1)}`);
-      console.log(`[DOCX] Column roles: ${JSON.stringify(match.roles)}`);
+      console.log(`[DOCX] Table ${tMatchIdx + 1} analysis:`);
+      console.log(`  - Mode: ${mode}`);
+      console.log(`  - Type: ${match.type}`);
+      console.log(`  - Roles identified: ${JSON.stringify(match.roles)}`);
+      console.log(`  - Header row: ${match.headerRowIndex}`);
       
       const targetTable = tables[match.tableIndex];
-      if (!targetTable) {
-        console.warn(`[InsertionAgent] Table at index ${match.tableIndex} not found in jsonObj`);
-        return;
-      }
+      if (!targetTable) return;
 
       const rows = this.findAllNodes(targetTable, 'w:tr');
       const prototypeRowIdx = match.headerRowIndex + 1 < rows.length ? match.headerRowIndex + 1 : match.headerRowIndex;
@@ -388,14 +416,12 @@ export class InsertionAgent {
       let newRows: any[] = [];
       if (match.type === 'sessions') {
         const sesiones = payload.sessions || (Array.isArray(payload) ? payload : []);
-        console.log(`[DOCX] Sessions received: ${sesiones.length}`);
         
         newRows = sesiones.map((session: any) => {
           const clonedRow = JSON.parse(JSON.stringify(prototypeRow));
           this.fillRowWithSessionData(clonedRow, session, match.roles);
           return clonedRow;
         });
-        console.log(`[DOCX] Rows generated: ${newRows.length}`);
       } else if (match.type === 'evaluation') {
         const evaluation = payload.evaluation || {};
         const evalItems = [
@@ -403,7 +429,6 @@ export class InsertionAgent {
           ...(evaluation.secondPartial?.items || []),
           ...(evaluation.final?.items || []),
         ];
-        console.log(`[DOCX] Evaluation items received: ${evalItems.length}`);
         newRows = evalItems.map(item => {
           const clonedRow = JSON.parse(JSON.stringify(prototypeRow));
           this.fillRowWithSessionData(clonedRow, { tema: item.name, actividad: `${item.percentage}%` } as any, match.roles);
@@ -413,7 +438,6 @@ export class InsertionAgent {
 
       if (newRows.length > 0) {
         this.replaceRowsInTable(targetTable, match.headerRowIndex, newRows);
-        console.log(`[DOCX] Output generated successfully for table ${tMatchIdx + 1}`);
       }
     });
   }
@@ -425,7 +449,7 @@ export class InsertionAgent {
       
       // MODO A: Si la celda tiene placeholders específicos de sesión
       const cellXml = this.builder.build(cell);
-      const sessionPlaceholderRegex = /\{\{\s*(num|week|date|unit|objective|topic|subtopics|content|activity|strategy|resources|evidence|evaluation|bibliography|dateReal|notes)\s*\}\}/i;
+      const sessionPlaceholderRegex = /\{\{\s*(num|week|date|unit|objective|topic|subtopics|content|activity|strategy|resources|recursos|didacticResources|recursos_didacticos|evidence|evaluation|bibliography|dateReal|notes)\s*\}\}/i;
       
       if (sessionPlaceholderRegex.test(cellXml)) {
         this.injectSessionPlaceholders(cell, session);
@@ -453,15 +477,34 @@ export class InsertionAgent {
         
         // Mapear cada campo de la sesión a su placeholder
         Object.keys(session).forEach(key => {
-          const value = this.resolveCellValue(session, key);
-          const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-          const regex = new RegExp(`\\{\\{\\s*${escapedKey}\\s*\\}\\}`, 'gi');
-          if (regex.test(text)) {
-            text = text.replace(regex, this.normalizeDocxText(value));
-          }
-        });
-        
-        targetObj['#text'] = text;
+      const value = this.resolveCellValue(session, key);
+      const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(`\\{\\{\\s*${escapedKey}\\s*\\}\\}`, 'gi');
+      if (regex.test(text)) {
+        text = text.replace(regex, this.normalizeDocxText(value));
+      }
+    });
+
+    // Mapeo manual para aliases comunes si la key no coincide exactamente con el objeto
+    const aliases: Record<string, string> = {
+      'recursos': this.resolveCellValue(session, 'resources'),
+      'recursos_didacticos': this.resolveCellValue(session, 'didacticResources'),
+      'didactic_resources': this.resolveCellValue(session, 'didacticResources'),
+      'RECURSOS': this.resolveCellValue(session, 'resources'),
+      'RECURSOS_DIDACTICOS': this.resolveCellValue(session, 'didacticResources'),
+      'ACTIVIDAD': this.resolveCellValue(session, 'activity'),
+      'TEMA': this.resolveCellValue(session, 'topic'),
+      'OBJETIVO': this.resolveCellValue(session, 'objective'),
+    };
+
+    for (const [alias, value] of Object.entries(aliases)) {
+      const regex = new RegExp(`\\{\\{\\s*${alias}\\s*\\}\\}`, 'gi');
+      if (regex.test(text)) {
+        text = text.replace(regex, this.normalizeDocxText(value));
+      }
+    }
+
+    targetObj['#text'] = text;
       }
     });
   }

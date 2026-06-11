@@ -619,6 +619,7 @@ export default function App() {
       }
 
       const resData = (await response.json()) as GeneratePreviewResponse;
+      console.log("[FRONTEND] Datos recibidos de la API:", resData);
       if (resData.success) {
         setMateriaName(resData.materia || materiaName);
         if (resData.objetivo) setObjetivoGeneral(resData.objetivo);
@@ -1164,10 +1165,16 @@ export default function App() {
                                 </td>
                                 <td className="p-2">
                                   <textarea
-                                    value={row.didacticResources ? row.didacticResources.join(', ') : (row.resources || '')}
+                                    value={
+                                      Array.isArray(row.didacticResources) && row.didacticResources.length > 0 
+                                        ? row.didacticResources.join(', ') 
+                                        : (typeof row.resources === 'string' ? row.resources : '')
+                                    }
                                     onChange={(e) => {
                                       const updated = [...generatedSessions];
-                                      updated[rIdx].didacticResources = e.target.value.split(',').map(s => s.trim());
+                                      const val = e.target.value;
+                                      updated[rIdx].resources = val;
+                                      updated[rIdx].didacticResources = val.split(',').map(s => s.trim()).filter(s => s.length > 0);
                                       setGeneratedSessions(updated);
                                       generateAndCacheDocx(updated);
                                     }}
