@@ -233,7 +233,17 @@ export class InsertionAgent {
     const tables = this.findAllNodes(jsonObj, 'w:tbl');
 
     // Validación de fila molde (OpenXML Expert)
-    const rowRegex = /(<w:tr\b[^>]*>[\s\S]*?\{\{\s*tema\s*\}\}[\s\S]*?<\/w:tr>)/i;
+    // Diagnóstico temporal (Protocolo de Validación)
+    const tempMatch = xmlContent.match(/<w:tr[\s\S]*?tema[\s\S]*?<\/w:tr>/i);
+    if (!tempMatch) {
+      console.log("[DEBUG] No se encontró ninguna fila con la palabra 'tema'. Inspecciona si Word cambió el formato.");
+    } else {
+      console.log("[DEBUG] Fila detectada. Longitud XML de fila:", tempMatch[0].length);
+    }
+
+    // Regex más robusto para encontrar la fila molde
+    // Busca "{{tema}}" incluso si tiene espacios o está fragmentado entre etiquetas XML
+    const rowRegex = /(<w:tr\b[^>]*>[\s\S]*?\{\{[\s\S]*?tema[\s\S]*?\}\}[\s\S]*?<\/w:tr>)/i;
     const match = xmlContent.match(rowRegex);
     console.log(`[DOCX] Template row found: ${!!match}`);
     if (match) {
