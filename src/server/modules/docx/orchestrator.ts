@@ -91,7 +91,11 @@ export class DocxAgentOrchestrator {
       
       try {
         // 2. InsertionAgent realiza la inyección de datos del syllabus
-        const resultBuffer = this.insertionAgent.compile(preservedBuffer, snapshot.payload);
+        // Normalización de datos: Aseguramos que pasamos lo que el agente necesita
+        const syllabusData = snapshot.payload;
+        const sesiones = (syllabusData as any).sesiones || syllabusData;
+        
+        const resultBuffer = this.insertionAgent.compile(preservedBuffer, sesiones);
         
         // Recargamos el ZIP para validación
         const zip = new PizZip(resultBuffer);

@@ -99,7 +99,8 @@ export class InsertionAgent {
   /**
    * Método principal de compilación e inyección
    */
-  public compile(templateBuffer: Buffer, payload: DocxPayload): Buffer {
+  public compile(templateBuffer: Buffer, payload: any): Buffer {
+    console.log("[DEBUG] Payload recibido en InsertionAgent:", JSON.stringify(payload, null, 2));
     const zip = new PizZip(templateBuffer);
     const fileKeys = Object.keys(zip.files);
 
@@ -114,16 +115,30 @@ export class InsertionAgent {
     return zip.generate({ type: 'nodebuffer', compression: 'DEFLATE' });
   }
 
-  private processXml(xml: string, payload: DocxPayload, isMainDoc: boolean): string {
+  private processXml(xml: string, payload: any, isMainDoc: boolean): string {
     const sanitizedXml = this.sanitizeTagSplitting(xml);
     const jsonObj = this.parser.parse(sanitizedXml);
     
+    // Normalización defensiva: Si recibimos solo el array de sesiones, creamos un payload mínimo
+    const finalPayload: DocxPayload = Array.isArray(payload) 
+      ? { 
+          sessions: payload, 
+          course: { name: '', code: '', generalObjective: '' }, 
+          bibliography: [], 
+          evaluation: { 
+            firstPartial: { period: '', items: [] }, 
+            secondPartial: { period: '', items: [] }, 
+            final: { period: '', items: [] } 
+          } 
+        }
+      : payload;
+
     // 1. Inyectar placeholders simples
-    this.injectPlaceholders(jsonObj, payload);
+    this.injectPlaceholders(jsonObj, finalPayload);
 
     // 2. Inyectar tablas (Solo en documento principal)
     if (isMainDoc) {
-      this.injectTables(jsonObj, payload);
+      this.injectTables(jsonObj, finalPayload);
     }
 
     const result = this.builder.build(jsonObj);
@@ -194,11 +209,15 @@ export class InsertionAgent {
 
     const upperText = text.toUpperCase();
     for (const [token, value] of Object.entries(tokens)) {
-      if (upperText.includes(token)) {
+      // Crear regex flexible que permita espacios opcionales: {{ tema }} o {{tema}}
+      const escapedToken = token
+        .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        .replace(/\\\{\\\{/g, '\\{\\{\\s*')
+        .replace(/\\\}\\\}/g, '\\s*\\}\\}');
+      
+      const regex = new RegExp(escapedToken, 'gi');
+      if (regex.test(text)) {
         console.log(`[InsertionAgent] Replacing placeholder ${token} with ${value.substring(0, 20)}...`);
-        // Usar regex global e insensible a mayúsculas para el reemplazo real
-        const escapedToken = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const regex = new RegExp(escapedToken, 'gi');
         text = text.replace(regex, this.normalizeDocxText(value));
       }
     }
@@ -212,7 +231,7 @@ export class InsertionAgent {
     const tables = this.findAllNodes(jsonObj, 'w:tbl');
 
     // Validación de fila molde (OpenXML Expert)
-    const rowRegex = /(<w:tr\b[^>]*>[\s\S]*?\{\{tema\}\}[\s\S]*?<\/w:tr>)/i;
+    const rowRegex = /(<w:tr\b[^>]*>[\s\S]*?\{\{\s*tema\s*\}\}[\s\S]*?<\/w:tr>)/i;
     const match = xmlContent.match(rowRegex);
     console.log(`[DOCX] Template row found: ${!!match}`);
     if (match) {
