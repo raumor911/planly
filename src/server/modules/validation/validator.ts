@@ -1,6 +1,16 @@
 import PizZip from 'pizzip';
+import { XMLParser } from 'fast-xml-parser';
 
 export class ValidationEngine {
+  private parser: XMLParser;
+
+  constructor() {
+    this.parser = new XMLParser({
+      ignoreAttributes: false,
+      allowBooleanAttributes: true
+    });
+  }
+
   public async validate(zip: PizZip): Promise<{ valid: boolean; errors: string[] }> {
     const errors: string[] = [];
     
@@ -20,21 +30,33 @@ export class ValidationEngine {
       }
     });
 
-    // 2. Verify images are preserved
+    // 2. Verify XML structure (Deep validation with fast-xml-parser)
+    const xmlFilesToCheck = fileKeys.filter(k => k.endsWith('.xml') && (k.startsWith('word/') || k === '[Content_Types].xml'));
+
+    xmlFilesToCheck.forEach(path => {
+      try {
+        const xmlContent = zip.file(path)?.asText();
+        if (!xmlContent) {
+          errors.push(`File ${path} is empty or missing content.`);
+          return;
+        }
+
+        // El parser arrojará un error si el XML está malformado
+        this.parser.parse(xmlContent);
+        
+        // Verificación manual de cierre de documento para word/document.xml
+        if (path === 'word/document.xml' && !xmlContent.includes('</w:document>')) {
+          errors.push('word/document.xml is truncated: missing </w:document> tag.');
+        }
+      } catch (e: any) {
+        errors.push(`XML Corruption in ${path}: ${e.message}`);
+      }
+    });
+
+    // 3. Verify images are preserved
     const mediaFiles = fileKeys.filter(k => k.startsWith('word/media/'));
     if (mediaFiles.length === 0) {
-      // This is a warning, not necessarily an error, but let's log it if the original had media
       console.warn('No media files found in the generated DOCX.');
-    }
-
-    // 3. Verify XML structure (basic check)
-    try {
-      const docXml = zip.file('word/document.xml').asText();
-      if (!docXml.includes('</w:document>')) {
-        errors.push('word/document.xml is truncated or malformed.');
-      }
-    } catch (e) {
-      errors.push('Could not read word/document.xml');
     }
 
     return {

@@ -40,13 +40,22 @@ const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 /**
  * Robust retry utility to call Gemini API, attempting multiple models and retries before giving up.
  */
-async function callGeminiWithRetry(
+export async function callGeminiWithRetry(
   contents: any,
   config: any,
-  preferredModel: string = "gemini-3.5-flash"
+  preferredModel: string = "gemini-1.5-flash"
 ): Promise<any> {
   const ai = getGeminiClient();
-  const modelsToTry = [preferredModel, "gemini-flash-latest", "gemini-3.1-flash-lite"];
+  // Intentamos con prefijos explícitos y modelos estables
+  const modelsToTry = [
+    preferredModel,
+    `models/${preferredModel}`,
+    "gemini-1.5-flash",
+    "models/gemini-1.5-flash",
+    "gemini-1.5-flash-latest",
+    "gemini-1.5-pro",
+    "gemini-1.5-pro-latest"
+  ];
   const maxRetriesPerModel = 2;
   let lastError: any = null;
 
@@ -54,25 +63,26 @@ async function callGeminiWithRetry(
     for (let attempt = 1; attempt <= maxRetriesPerModel; attempt++) {
       try {
         console.log(`[Gemini Engine] Attempting call with model "${model}" - (Attempt ${attempt}/${maxRetriesPerModel})...`);
-        const response = await ai.models.generateContent({
-          model,
-          contents,
-          config
+        
+        // Usamos el patrón que funciona en el resto del proyecto
+        const response = await (ai as any).models.generateContent({
+          model: model,
+          contents: contents,
+          config: config
         });
+        
         console.log(`[Gemini Engine] Success! Called with model "${model}"`);
         return response;
       } catch (err: any) {
         lastError = err;
         console.warn(`[Gemini Engine Warning] Error on model "${model}" (attempt ${attempt}): ${err?.message || err}`);
         
-        // Wait progressive backoff before retrying if there are more attempts left for this model
         if (attempt < maxRetriesPerModel) {
           const waitMs = attempt * 1500;
           await delay(waitMs);
         }
       }
     }
-    // Small inter-model delay
     await delay(500);
   }
 
@@ -355,5 +365,95 @@ export async function cleanUpRawWordText(rawText: string): Promise<string> {
   } catch (error: any) {
     console.error("[cleanUpRawWordText Fail] Error during raw text cleanup. Falling back to local regex formatting:", error);
     return fallbackCleanUpRawWordText(rawText);
+  }
+}
+
+/**
+ * Agente Inspector de XML (Preflight Agent)
+ * Analiza el XML de una plantilla para identificar riesgos estructurales.
+ */
+export async function askAgentToInspectXML(xmlContent: string): Promise<{ riskScore: number; issues: string[]; riskyNodes: string[] }> {
+  console.log("[Preflight Agent] Inspecting XML for structural risks...");
+  
+  const contents = `Actúa como un Auditor Senior de OpenXML. 
+  Tu tarea es inspeccionar el siguiente fragmento de XML de un documento de Word (.docx) e identificar riesgos potenciales de corrupción ANTES de realizar cualquier inyección de datos.
+  
+  FRAGMENTO XML A INSPECCIONAR:
+  ---
+  ${xmlContent.substring(0, 15000)} // Limitamos el tamaño para el prompt
+  ---
+  
+  RIESGOS A BUSCAR:
+  1. "Tag Splitting": Placeholders que están divididos en múltiples nodos <w:t> por culpa de cambios de formato en Word (ej: { {NOMBRE} }).
+  2. Tablas con estructuras complejas o celdas combinadas que podrían romperse al clonar filas.
+  3. Etiquetas XML mal anidadas o truncadas.
+  
+  DEBES RETORNAR UN JSON ESTRICTO con:
+  - 'riskScore': Un número de 0 a 100 indicando el nivel de riesgo (0 = seguro, 100 = crítico).
+  - 'issues': Un array de strings describiendo los problemas encontrados.
+  - 'riskyNodes': Un array de fragmentos de texto o identificadores de los nodos que presentan riesgo.`;
+
+  const config = {
+    responseMimeType: "application/json",
+    temperature: 0.2,
+  };
+
+  try {
+    const response = await callGeminiWithRetry(contents, config, "gemini-1.5-flash-latest");
+    const result = JSON.parse(response.text || '{"riskScore": 0, "issues": [], "riskyNodes": []}');
+    console.log(`[Preflight Agent] Inspection complete. Risk Score: ${result.riskScore}`);
+    return result;
+  } catch (error: any) {
+    console.error("[Preflight Agent Fail] Error during XML inspection:", error);
+    return { riskScore: 0, issues: ["Error en inspección agéntica"], riskyNodes: [] };
+  }
+}
+
+/**
+ * Agente Sanador de XML (Healing Agent)
+ * Recibe un fragmento de XML corrupto y el log de errores, y devuelve el XML corregido.
+ */
+export async function askAgentToHealXML(xmlCorrupto: string, errorLog: string): Promise<string> {
+  console.log("[Healing Agent] Activating XML repair loop...");
+  
+  const contents = `Actúa como un Experto en OpenXML y Esquemas de Microsoft Word. 
+  Tu misión es reparar un fragmento de XML de un documento .docx que ha sido identificado como CORRUPTO o malformado tras una inyección de datos.
+  
+  ERROR LOG DEL VALIDADOR:
+  ---
+  ${errorLog}
+  ---
+  
+  FRAGMENTO XML CORRUPTO:
+  ---
+  ${xmlCorrupto}
+  ---
+  
+  INSTRUCCIONES ESTRICTAS:
+  1. Analiza el error log para identificar etiquetas sin cerrar (Tag Splitting), atributos malformados o estructuras XML inválidas.
+  2. Reconstruye el XML asegurando que todas las etiquetas <w:p>, <w:r>, <w:t>, <w:tr>, <w:tc> y <w:tbl> estén correctamente anidadas y cerradas.
+  3. Preserva el contenido textual inyectado.
+  4. NO incluyas ninguna explicación, preámbulo o marcas Markdown (\`\`\`xml).
+  5. Retorna ÚNICAMENTE el código XML puro y válido.
+  
+  REPARACIÓN REQUERIDA:`;
+
+  const config = {
+    temperature: 0.1, // Baja temperatura para mayor precisión técnica
+    topP: 0.95,
+  };
+
+  try {
+    const response = await callGeminiWithRetry(contents, config, "gemini-1.5-pro");
+    let repairedXml = response.text || xmlCorrupto;
+    
+    // Limpieza de posibles marcas markdown si la IA las incluye por error
+    repairedXml = repairedXml.replace(/```xml\n?/g, "").replace(/```\n?/g, "").trim();
+    
+    console.log("[Healing Agent] XML repair completed.");
+    return repairedXml;
+  } catch (error: any) {
+    console.error("[Healing Agent Fail] Error during XML healing:", error);
+    return xmlCorrupto; // Fallback al original si falla la IA
   }
 }

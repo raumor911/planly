@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type, Schema } from "@google/genai";
-import { getGeminiClient } from "../../geminiService";
+import { getGeminiClient, callGeminiWithRetry } from "../../geminiService";
 
 export interface SyllabusCourse {
   name: string;
@@ -35,18 +35,12 @@ export interface SyllabusResult {
 }
 
 export class SyllabusParser {
-  private ai: GoogleGenAI;
-
-  constructor() {
-    this.ai = getGeminiClient();
-  }
-
   /**
    * Realiza un análisis taxonómico infalible de temarios académicos.
    * La firma se mantiene como Promise<any> por requerimiento técnico.
    */
   public async parse(text: string, numWeeks: number = 14): Promise<any> {
-    const systemPrompt = `Actúa como un clasificador curricular universitario riguroso. Tu objetivo es realizar un análisis taxonómico infalible del temario académico proporcionado.
+    const instructions = `Actúa como un clasificador curricular universitario riguroso. Tu objetivo es realizar un análisis taxonómico infalible del temario académico proporcionado.
     
     INSTRUCCIONES DE PROCESAMIENTO:
     - Normaliza acentos, mayúsculas y espacios para identificar variaciones de cabeceras equivalentes a: DENOMINACIÓN DE LA ASIGNATURA, FINES DEL APRENDIZAJE, CONTENIDO TEMÁTICO, ACTIVIDADES DE APRENDIZAJE y CRITERIOS DE EVALUACIÓN.
@@ -123,18 +117,16 @@ export class SyllabusParser {
       required: ["course", "topics", "activities", "evaluation", "resources", "warnings"]
     };
 
-    const prompt = `Analiza taxonómicamente el siguiente temario académico:
+    const prompt = `${instructions}
+
+    Analiza taxonómicamente el siguiente temario académico:
     
     ${text}`;
 
-    const result = await this.ai.models.generateContent({
-      model: "gemini-1.5-flash",
-      contents: prompt,
-      config: {
-        systemInstruction: systemPrompt,
-        responseMimeType: "application/json",
-        responseSchema: responseSchema
-      }
+    // Usamos el servicio centralizado con reintentos y modelos corregidos
+    const result = await callGeminiWithRetry(prompt, {
+      responseMimeType: "application/json",
+      responseSchema: responseSchema
     });
 
     const responseText = result.text;

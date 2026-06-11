@@ -3,12 +3,10 @@ import express from "express";
 import path from "path";
 import fs from "fs";
 import PizZip from "pizzip";
-// @ts-ignore
-import Docxtemplater from "docxtemplater";
 import { createServer as createViteServer } from "vite";
 import mammoth from "mammoth";
 import { SyllabusParser } from "./src/server/modules/parser/syllabus";
-import { DocxPayload } from "./src/server/modules/docx/types";
+import { DocxPayload, GenerationSnapshot } from "./src/server/modules/docx/types";
 import { 
   askGeminiToStructureSyllabus,
   extractSyllabusFromPdf,
@@ -18,9 +16,11 @@ import {
   getSessionDate, 
   FidelityTemplateEngine
 } from "./src/server/templateEngine";
+import { DocxAgentOrchestrator } from "./src/server/modules/docx/orchestrator";
 
 const syllabusParser = new SyllabusParser();
 const fidelityEngine = new FidelityTemplateEngine();
+const docxOrchestrator = new DocxAgentOrchestrator();
 
 const app = express();
 const PORT = 3000;
@@ -58,6 +58,42 @@ app.post("/api/projects/:id/render-docx", async (req, res) => {
     res.setHeader("Content-Disposition", 'attachment; filename="PLAN_DOCENTE.docx"');
     res.send(outBuffer);
   } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// --- AGENTIC FLOW ENDPOINTS ---
+
+app.post("/api/docx/preflight", async (req, res) => {
+  const { templateBase64 } = req.body;
+  try {
+    if (!templateBase64) {
+      res.status(400).json({ error: "La plantilla en base64 es obligatoria para el análisis preflight." });
+      return;
+    }
+    const result = await docxOrchestrator.runPreflight(templateBase64);
+    res.json(result);
+  } catch (error: any) {
+    console.error("[Preflight Endpoint Error]:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/docx/generate-safe", async (req, res) => {
+  const snapshot: GenerationSnapshot = req.body;
+  try {
+    if (!snapshot.templateBase64 || !snapshot.payload) {
+      res.status(400).json({ error: "Snapshot incompleto. Se requiere plantilla y payload." });
+      return;
+    }
+    
+    const buffer = await docxOrchestrator.runSafeGeneration(snapshot, snapshot.userOptions?.planDraft);
+    
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+    res.setHeader("Content-Disposition", 'attachment; filename="PLAN_SEGURO.docx"');
+    res.send(buffer);
+  } catch (error: any) {
+    console.error("[Generate Safe Endpoint Error]:", error);
     res.status(500).json({ error: error.message });
   }
 });

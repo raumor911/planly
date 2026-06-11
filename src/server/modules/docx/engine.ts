@@ -61,6 +61,50 @@ export class PreservationEngine {
     return this.builder.build(jsonObj);
   }
 
+  /**
+   * Identifica placeholders y tablas en un fragmento XML sin mutarlo.
+   */
+  public inspect(xml: string): { placeholders: string[]; tablesCount: number } {
+    const jsonObj = this.parser.parse(xml);
+    const placeholders = new Set<string>();
+    
+    // Función recursiva para buscar tokens
+    const findTokens = (node: any) => {
+      if (!node) return;
+      if (Array.isArray(node)) {
+        node.forEach(findTokens);
+      } else if (typeof node === 'object') {
+        Object.keys(node).forEach(key => {
+          if (key === 'w:t') {
+            const tContent = this.getTNodeText(node[key]);
+            const matches = tContent.match(/\{[^{}]+\}/g);
+            if (matches) matches.forEach(m => placeholders.add(m));
+          } else {
+            findTokens(node[key]);
+          }
+        });
+      }
+    };
+
+    findTokens(jsonObj);
+    const tables = this.findAllNodes(jsonObj, 'w:tbl');
+
+    return {
+      placeholders: Array.from(placeholders),
+      tablesCount: tables.length
+    };
+  }
+
+  private getTNodeText(tNode: any): string {
+    if (Array.isArray(tNode)) {
+      const textItem = tNode.find(item => item['#text'] !== undefined);
+      return textItem ? textItem['#text'] : '';
+    } else if (typeof tNode === 'object' && tNode['#text'] !== undefined) {
+      return tNode['#text'];
+    }
+    return typeof tNode === 'string' ? tNode : '';
+  }
+
   private injectPlaceholders(node: any, payload: DocxPayload): void {
     if (!node) return;
 
@@ -95,25 +139,39 @@ export class PreservationEngine {
     } else if (typeof tNode === 'object' && tNode['#text'] !== undefined) {
       text = tNode['#text'];
       targetObj = tNode;
-    } else if (typeof tNode === 'string') {
-      // In some cases fast-xml-parser might simplify, but with preserveOrder it's rare
-      return; 
     }
 
     if (!text || !targetObj || typeof text !== 'string') return;
 
-    // Course info
-    const newText = text
-      .replace(/\{\{NOMBRE_ASIGNATURA\}\}/g, payload.course.name || '')
-      .replace(/\{\{OBJETIVO_GENERAL\}\}/g, payload.course.generalObjective || '');
+    // Inyección Semántica: Mapeo de tokens a valores del payload
+    // Reemplazo directo sin depender de regex complejas que rompan etiquetas
+    const tokens: Record<string, string> = {
+      '{{NOMBRE_ASIGNATURA}}': payload.course.name || '',
+      '{{OBJETIVO_GENERAL}}': payload.course.generalObjective || '',
+      '{{CLAVE}}': payload.course.code || '',
+    };
+
+    let updatedText = text;
+    for (const [token, value] of Object.entries(tokens)) {
+      if (updatedText.includes(token)) {
+        updatedText = updatedText.split(token).join(value);
+      }
+    }
     
-    // Heuristic replacements
-    let finalParamsText = newText;
-    if (/([Mm]ateria|[Aa]signatura|[Cc]urso)\s*:\s*([_.\-\s]*)$/i.test(finalParamsText)) {
-      finalParamsText = finalParamsText.replace(/([Mm]ateria|[Aa]signatura|[Cc]urso)\s*:\s*([_.\-\s]*)$/i, `$1: ${payload.course.name}`);
+    // Heurística de detección de campos vacíos (por ejemplo "Materia: ________")
+    const labels = [
+      { regex: /([Mm]ateria|[Aa]signatura|[Cc]urso)\s*:\s*([_.\-\s]*)$/i, value: payload.course.name },
+      { regex: /([Óó]bjetivo\s+[Gg]eneral|[Cc]ompetencia\s+[Gg]eneral)\s*:\s*([_.\-\s]*)$/i, value: payload.course.generalObjective },
+      { regex: /([Cc]lave|[Cc][óo]digo)\s*:\s*([_.\-\s]*)$/i, value: payload.course.code }
+    ];
+
+    for (const label of labels) {
+      if (label.regex.test(updatedText)) {
+        updatedText = updatedText.replace(label.regex, `$1: ${label.value}`);
+      }
     }
 
-    targetObj['#text'] = finalParamsText;
+    targetObj['#text'] = updatedText;
   }
 
   private injectTables(jsonObj: any, payload: DocxPayload): void {
