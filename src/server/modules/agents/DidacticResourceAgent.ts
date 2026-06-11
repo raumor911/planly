@@ -8,29 +8,39 @@ import { Type } from "@google/genai";
  */
 export class DidacticResourceAgent {
   /**
-   * Enriquece una lista de sesiones con recursos didácticos sugeridos o extraídos.
+   * Enriquece una lista de sesiones con recursos didácticos sugeridos o extraídos por actividad.
    */
   public async enrichSessions(sessions: DocxSession[], originalText?: string): Promise<DocxSession[]> {
-    console.log(`[DidacticResourceAgent] Enriqueciendo ${sessions.length} sesiones con recursos didácticos...`);
+    console.log(`[DidacticResourceAgent] Enriqueciendo ${sessions.length} sesiones con recursos didácticos por actividad...`);
 
     const enrichedSessions = await Promise.all(
       sessions.map(async (session) => {
-        // 1. Preservar si ya tiene recursos (didacticResources o resources no vacío)
+        if (session.activities && session.activities.length > 0) {
+          const enrichedActivities = await this.enrichActivities(session.activities, session.topic || "", originalText);
+          
+          // Aplanar recursos para compatibilidad con la vista plana y DOCX simple
+          const allResources = Array.from(new Set(enrichedActivities.flatMap(a => a.resources)));
+          
+          return {
+            ...session,
+            activities: enrichedActivities,
+            didacticResources: allResources,
+            resources: allResources.join('\n')
+          };
+        }
+
+        // Fallback si no hay actividades estructuradas (mantiene lógica anterior)
         const hasDidactic = Array.isArray(session.didacticResources) && session.didacticResources.length > 0;
         const hasResources = typeof session.resources === 'string' && session.resources.trim().length > 5;
 
         if (hasDidactic || hasResources) {
-          console.log(`[DidacticResourceAgent] Sesión ${session.num}: Usando recursos existentes.`);
           return {
             ...session,
             didacticResources: hasDidactic ? session.didacticResources : [session.resources as string]
           };
         }
 
-        // 2. Sugerir recursos si está vacío
         const resources = await this.suggestResources(session.topic || "", originalText);
-        console.log(`[DidacticResourceAgent] Sesión ${session.num}: Sugeridos ${resources.length} recursos.`);
-        
         return {
           ...session,
           didacticResources: resources,
@@ -40,6 +50,44 @@ export class DidacticResourceAgent {
     );
 
     return enrichedSessions;
+  }
+
+  /**
+   * Enriquece una lista de actividades con recursos específicos basados en su descripción y estrategia.
+   */
+  private async enrichActivities(activities: any[], topic: string, originalText?: string): Promise<any[]> {
+    return Promise.all(activities.map(async (act) => {
+      if (act.resources && act.resources.length > 0) return act;
+
+      const prompt = `Actúa como un estratega instruccional experto.
+      
+      TAREA: Para la actividad "${act.description}" con estrategia pedagógica "${act.strategy}" dentro del tema "${topic}", sugiere 2-3 recursos didácticos específicos.
+      
+      REGLAS:
+      1. Prioriza recursos que faciliten la ejecución de la estrategia mencionada.
+      2. Devuelve exclusivamente un JSON: {"resources": ["recurso1", "recurso2"]}.
+      
+      Respuesta JSON:`;
+
+      try {
+        const config = {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              resources: { type: Type.ARRAY, items: { type: Type.STRING } }
+            },
+            required: ["resources"]
+          }
+        };
+        const response = await callGeminiWithRetry(prompt, config);
+        const result = JSON.parse(response.text.replace(/```json\n?|```/g, "").trim() || '{"resources": []}');
+        return { ...act, resources: result.resources };
+      } catch (error) {
+        console.error(`[DidacticResourceAgent] Error enriqueciendo actividad:`, error);
+        return act;
+      }
+    }));
   }
 
   /**

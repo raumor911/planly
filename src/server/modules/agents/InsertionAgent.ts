@@ -95,10 +95,19 @@ export class InsertionAgent {
       case 'content':
         return session.content || '';
       case 'activity':
+        if (session.activities && session.activities.length > 0) {
+          return session.activities.map((a, i) => `${session.activities!.length > 1 ? (i + 1) + '. ' : ''}${a.description}${a.strategy ? ' (' + a.strategy + ')' : ''}`).join('\n');
+        }
         return session.activity || session.strategy || '';
       case 'resources':
+        if (session.activities && session.activities.length > 0) {
+          return session.activities.map((a, i) => `${session.activities!.length > 1 ? (i + 1) + '. ' : ''}${a.resources.join(', ')}`).join('\n');
+        }
         return session.resources || (session.didacticResources ? session.didacticResources.join('\n') : '');
       case 'didacticResources':
+        if (session.activities && session.activities.length > 0) {
+          return session.activities.map((a, i) => `${session.activities!.length > 1 ? (i + 1) + '. ' : ''}${a.resources.join(', ')}`).join('\n');
+        }
         return session.didacticResources ? session.didacticResources.join('\n') : (session.resources || '');
       case 'evidence':
         return session.evidence || '';
@@ -179,15 +188,15 @@ export class InsertionAgent {
               num: session.num || "",
               tema: session.topic || session.tema || "",
               topic: session.topic || session.tema || "",
-              actividad: session.activity || session.actividad || "",
-              activity: session.activity || session.actividad || "",
+              actividad: this.resolveCellValue(session, 'activity'),
+              activity: this.resolveCellValue(session, 'activity'),
               objetivo: session.objective || session.objetivo || "",
               objective: session.objective || session.objetivo || "",
-              recursos: session.resources || (session.didacticResources ? session.didacticResources.join('\n') : ""),
-              resources: session.resources || (session.didacticResources ? session.didacticResources.join('\n') : ""),
-              RECURSOS: session.didacticResources ? session.didacticResources.join('\n') : (session.resources || ""),
-              RECURSOS_DIDACTICOS: session.didacticResources ? session.didacticResources.join('\n') : (session.resources || ""),
-              DIDACTIC_RESOURCES: session.didacticResources ? session.didacticResources.join('\n') : (session.resources || "")
+              recursos: this.resolveCellValue(session, 'resources'),
+              resources: this.resolveCellValue(session, 'resources'),
+              RECURSOS: this.resolveCellValue(session, 'didacticResources'),
+              RECURSOS_DIDACTICOS: this.resolveCellValue(session, 'didacticResources'),
+              DIDACTIC_RESOURCES: this.resolveCellValue(session, 'didacticResources')
           };
 
           for (const [key, val] of Object.entries(replacements)) {

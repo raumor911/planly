@@ -1,3 +1,9 @@
+export interface DocxActivity {
+  description: string;
+  strategy: string;
+  resources: string[];
+}
+
 export interface DocxSession {
   num: number;
   week?: string;
@@ -7,15 +13,16 @@ export interface DocxSession {
   topic?: string;
   subtopics?: string[];
   content?: string;
-  activity?: string;
-  strategy?: string;
-  resources?: string;
-  evidence?: string;
-  evaluation?: string;
-  bibliography?: string;
+  activity?: string; // Mantenido para compatibilidad y vista plana
+  strategy?: string; // Mantenido para compatibilidad
+  resources?: string; // Mantenido para compatibilidad
+  activities?: DocxActivity[]; // Nueva estructura jerárquica
   didacticResources?: string[];
   dateReal?: string;
   notes?: string;
+  evidence?: string;
+  evaluation?: string;
+  bibliography?: string;
 }
 
 export type SessionRole = keyof DocxSession;

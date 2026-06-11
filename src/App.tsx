@@ -1149,8 +1149,19 @@ export default function App() {
                                 </td>
                                 <td className="p-2">
                                   <textarea
-                                    value={row.activity}
-                                    onChange={(e) => handleUpdateSessionRow(rIdx, "activity", e.target.value)}
+                                    value={
+                                      row.activities && row.activities.length > 0
+                                        ? row.activities.map((a, i) => `${row.activities!.length > 1 ? (i + 1) + '. ' : ''}${a.description}${a.strategy ? ' (' + a.strategy + ')' : ''}`).join('\n')
+                                        : (row.activity || '')
+                                    }
+                                    onChange={(e) => {
+                                      const updated = [...generatedSessions];
+                                      const val = e.target.value;
+                                      updated[rIdx].activity = val;
+                                      updated[rIdx].activities = []; 
+                                      setGeneratedSessions(updated);
+                                      generateAndCacheDocx(updated);
+                                    }}
                                     className="premium-cell-textarea w-full bg-transparent outline-none rounded-lg p-2 text-slate-600 resize-none text-[11px] leading-snug placeholder:text-slate-400 focus:bg-white/80 focus:ring-1 focus:ring-[#1677D2]/35 hover:bg-white/40 transition-colors duration-150"
                                     rows={2}
                                   />
@@ -1166,15 +1177,18 @@ export default function App() {
                                 <td className="p-2">
                                   <textarea
                                     value={
-                                      Array.isArray(row.didacticResources) && row.didacticResources.length > 0 
-                                        ? row.didacticResources.join(', ') 
-                                        : (typeof row.resources === 'string' ? row.resources : '')
+                                      row.activities && row.activities.length > 0
+                                        ? row.activities.map((a, i) => `${row.activities!.length > 1 ? (i + 1) + '. ' : ''}${a.resources.join(', ')}`).join('\n')
+                                        : (Array.isArray(row.didacticResources) && row.didacticResources.length > 0 
+                                            ? row.didacticResources.join(', ') 
+                                            : (typeof row.resources === 'string' ? row.resources : ''))
                                     }
                                     onChange={(e) => {
                                       const updated = [...generatedSessions];
                                       const val = e.target.value;
                                       updated[rIdx].resources = val;
                                       updated[rIdx].didacticResources = val.split(',').map(s => s.trim()).filter(s => s.length > 0);
+                                      updated[rIdx].activities = []; // Resetear para forzar uso de resources plano
                                       setGeneratedSessions(updated);
                                       generateAndCacheDocx(updated);
                                     }}

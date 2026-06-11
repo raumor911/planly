@@ -35,8 +35,11 @@ export interface SyllabusResult {
   sessions: Array<{
     num: number;
     topic: string;
-    activity: string;
-    resources: string;
+    activities: Array<{
+      description: string;
+      strategy: string;
+      resources: string[];
+    }>;
     objective?: string;
     week?: string;
     unit?: string;
@@ -44,6 +47,8 @@ export interface SyllabusResult {
     evidence?: string;
     evaluation?: string;
     bibliography?: string;
+    activity?: string; // Para compatibilidad
+    resources?: string; // Para compatibilidad
   }>;
   bibliography: string[];
   evaluation: any[];
@@ -67,7 +72,7 @@ export class SyllabusParser {
     - REGLA DE EXCLUSIÓN DE TEMAS: Un tema principal válido solo existe si está bajo la sección temática, posee numeración entera o subtemas asociados (ej. 1.1, 1.2). Queda estrictamente PROHIBIDO clasificar actividades, tareas, evidencias, porcentajes, recursos o libros de bibliografía como parte de los 'topics'.
     - REGLA DE OBJETIVOS ESPECÍFICOS: El campo 'objective' de cada sesión DEBE ser un objetivo particular y único, redactado por ti basándote EXCLUSIVAMENTE en los temas y subtemas de esa sesión. Queda PROHIBIDO repetir el objetivo general del curso o usar el mismo objetivo en varias sesiones. Cada sesión debe tener su propia meta de aprendizaje específica.
     - REGLA DE RUIDO ESTRUCTURAL: Si aparece una numeración aislada sin título asociado (ej. "2.", "4.", "8."), debe ignorarse por completo. No crees temas vacíos.
-    - CLASIFICACIÓN DE ACTIVIDADES: Todo lo que describa diseños de trípticos, mapas sinópticos o análisis de casos debe ser aislado como 'activity' dentro del arreglo de sesiones.
+    - CLASIFICACIÓN DE ACTIVIDADES: Todo lo que describa diseños de trípticos, mapas sinópticos o análisis de casos debe ser aislado dentro del arreglo 'activities' de cada sesión. Identifica la descripción de la actividad y la estrategia pedagógica asociada. Si el temario menciona recursos específicos para esa actividad, inclúyelos en el array 'resources' de la actividad.
     
     ESPECIFICACIONES DEL FORMATO:
     - Genera una estructura JSON limpia y validable con exactamente ${numWeeks} elementos en el array 'sessions'.
@@ -96,8 +101,21 @@ export class SyllabusParser {
             properties: {
               num: { type: Type.INTEGER },
               topic: { type: Type.STRING },
-              activity: { type: Type.STRING },
-              resources: { type: Type.STRING },
+              activities: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    description: { type: Type.STRING },
+                    strategy: { type: Type.STRING },
+                    resources: {
+                      type: Type.ARRAY,
+                      items: { type: Type.STRING }
+                    }
+                  },
+                  required: ["description", "strategy", "resources"]
+                }
+              },
               objective: { type: Type.STRING },
               week: { type: Type.STRING },
               unit: { type: Type.STRING },
@@ -106,7 +124,7 @@ export class SyllabusParser {
               evaluation: { type: Type.STRING },
               bibliography: { type: Type.STRING }
             },
-            required: ["num", "topic", "activity", "resources", "objective"]
+            required: ["num", "topic", "activities", "objective"]
           }
         },
         bibliography: {
