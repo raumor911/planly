@@ -100,7 +100,9 @@ export class InsertionAgent {
    * Método principal de compilación e inyección
    */
   public compile(templateBuffer: Buffer, payload: any): Buffer {
-    console.log("[DEBUG] Payload recibido en InsertionAgent:", JSON.stringify(payload, null, 2));
+    // Log de Validación (Checklist de campo)
+    console.log("[DEBUG] Sesiones recibidas en InsertionAgent:", JSON.stringify(payload.sessions || payload, null, 2));
+    
     const zip = new PizZip(templateBuffer);
     const fileKeys = Object.keys(zip.files);
 
@@ -253,17 +255,19 @@ export class InsertionAgent {
 
       let newRows: any[] = [];
       if (match.type === 'sessions') {
-        console.log(`[InsertionAgent] Injecting ${payload.sessions.length} sessions`);
-        newRows = payload.sessions.map(session => {
+        const sesiones = payload.sessions || (Array.isArray(payload) ? payload : []);
+        console.log(`[InsertionAgent] Injecting ${sesiones.length} sessions`);
+        newRows = sesiones.map((session: any) => {
           const clonedRow = JSON.parse(JSON.stringify(prototypeRow));
           this.fillRowWithSessionData(clonedRow, session, match.roles);
           return clonedRow;
         });
       } else if (match.type === 'evaluation') {
+        const evaluation = payload.evaluation || {};
         const evalItems = [
-          ...payload.evaluation.firstPartial.items,
-          ...payload.evaluation.secondPartial.items,
-          ...payload.evaluation.final.items,
+          ...(evaluation.firstPartial?.items || []),
+          ...(evaluation.secondPartial?.items || []),
+          ...(evaluation.final?.items || []),
         ];
         console.log(`[InsertionAgent] Injecting ${evalItems.length} evaluation items`);
         newRows = evalItems.map(item => {

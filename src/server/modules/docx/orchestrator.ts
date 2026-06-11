@@ -91,11 +91,13 @@ export class DocxAgentOrchestrator {
       
       try {
         // 2. InsertionAgent realiza la inyección de datos del syllabus
-        // Normalización de datos: Aseguramos que pasamos lo que el agente necesita
+        // EXTRACCIÓN EXPLÍCITA: Aseguramos que lleguen las sesiones
         const syllabusData = snapshot.payload;
         const sesiones = (syllabusData as any).sesiones || syllabusData;
         
-        const resultBuffer = this.insertionAgent.compile(preservedBuffer, sesiones);
+        console.log(`[DocxAgentOrchestrator] Sesiones detectadas para inyección: ${Array.isArray(sesiones) ? sesiones.length : (sesiones.sessions?.length || 0)}`);
+        
+        const resultBuffer = this.insertionAgent.compile(preservedBuffer, syllabusData);
         
         // Recargamos el ZIP para validación
         const zip = new PizZip(resultBuffer);
