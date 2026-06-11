@@ -48,17 +48,60 @@ export class PreservationEngine {
   }
 
   private processXml(xml: string, payload: DocxPayload, isMainDoc: boolean): string {
-    const jsonObj = this.parser.parse(xml);
+    // 1. Sanitizador de Tag Splitting (P2)
+    // Corrige llaves rotas por Word ej: {</w:t>...<w:t>{
+    const sanitizedXml = this.sanitizeTagSplitting(xml);
     
-    // 1. Process Placeholders
+    const jsonObj = this.parser.parse(sanitizedXml);
+    
+    // 2. Process Placeholders
     this.injectPlaceholders(jsonObj, payload);
 
-    // 2. Process Tables (Main doc only for now)
+    // 3. Process Tables (Main doc only for now)
     if (isMainDoc) {
       this.injectTables(jsonObj, payload);
     }
 
     return this.builder.build(jsonObj);
+  }
+
+  /**
+   * P2: Sanitizador de Tag Splitting
+   * Une fragmentos de placeholders que Word rompió con etiquetas de corrección u otros nodos.
+   */
+  private sanitizeTagSplitting(xml: string): string {
+    // Patrón para detectar fragmentos de placeholders divididos por etiquetas w:
+    let cleaned = xml;
+    
+    // 1. Unir llaves iniciales split: { ... {  -> {{
+    cleaned = cleaned.replace(/\{<\/w:t>(?:<[^>]+>)*<w:t>\{/g, '{{');
+    
+    // 2. Unir llaves finales split: } ... } -> }}
+    cleaned = cleaned.replace(/\}<\/w:t>(?:<[^>]+>)*<w:t>\}/g, '}}');
+    
+    // 3. Unir contenido de placeholders split: {{ ... TEMA ... }}
+    // Ejecutamos varias veces para manejar múltiples fragmentaciones en un mismo placeholder
+    let prev;
+    do {
+      prev = cleaned;
+      cleaned = cleaned.replace(/(\{\{[^{}]+)<\/w:t>(?:<[^>]+>)*<w:t>([^{}]+\}\})/g, '$1$2');
+    } while (cleaned !== prev);
+
+    return cleaned;
+  }
+
+  /**
+   * C2: Escapado XML Estricto
+   * Convierte caracteres especiales en entidades seguras para evitar corrupción del árbol XML.
+   */
+  private escapeXml(text: string): string {
+    if (!text) return '';
+    return text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&apos;');
   }
 
   /**
@@ -154,7 +197,8 @@ export class PreservationEngine {
     let updatedText = text;
     for (const [token, value] of Object.entries(tokens)) {
       if (updatedText.includes(token)) {
-        updatedText = updatedText.split(token).join(value);
+        // C2: Escapado XML Estricto para el valor inyectado
+        updatedText = updatedText.split(token).join(this.escapeXml(value));
       }
     }
     
@@ -167,7 +211,7 @@ export class PreservationEngine {
 
     for (const label of labels) {
       if (label.regex.test(updatedText)) {
-        updatedText = updatedText.replace(label.regex, `$1: ${label.value}`);
+        updatedText = updatedText.replace(label.regex, `$1: ${this.escapeXml(label.value || '')}`);
       }
     }
 
@@ -238,6 +282,7 @@ export class PreservationEngine {
   }
 
   private setCellText(cell: any, text: string): void {
+    const escapedText = this.escapeXml(text);
     const tNodes = this.findAllNodes(cell, 'w:t');
     if (tNodes.length > 0) {
       // Surgery: Keep the first w:t content, replace its text, and clear the others
@@ -245,9 +290,9 @@ export class PreservationEngine {
       if (Array.isArray(firstTContent)) {
         const textItem = firstTContent.find(item => item['#text'] !== undefined);
         if (textItem) {
-          textItem['#text'] = text;
+          textItem['#text'] = escapedText;
         } else {
-          firstTContent.push({ '#text': text });
+          firstTContent.push({ '#text': escapedText });
         }
         
         // Clear subsequent w:t nodes text
@@ -264,7 +309,7 @@ export class PreservationEngine {
       if (rNodes.length > 0) {
         const firstRContent = rNodes[0];
         if (Array.isArray(firstRContent)) {
-          firstRContent.push({ 'w:t': [{ '#text': text }] });
+          firstRContent.push({ 'w:t': [{ '#text': escapedText }] });
         }
       }
     }
