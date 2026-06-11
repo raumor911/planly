@@ -7,6 +7,7 @@ import { createServer as createViteServer } from "vite";
 import mammoth from "mammoth";
 import { SyllabusParser } from "./src/server/modules/parser/syllabus";
 import { DocxPayload, GenerationSnapshot } from "./src/server/modules/docx/types";
+import { DidacticResourceAgent } from "./src/server/modules/agents/DidacticResourceAgent";
 import { 
   askGeminiToStructureSyllabus,
   extractSyllabusFromPdf,
@@ -19,6 +20,7 @@ import {
 import { DocxAgentOrchestrator } from "./src/server/modules/docx/orchestrator";
 
 const syllabusParser = new SyllabusParser();
+const didacticResourceAgent = new DidacticResourceAgent();
 const fidelityEngine = new FidelityTemplateEngine();
 const docxOrchestrator = new DocxAgentOrchestrator();
 
@@ -274,6 +276,10 @@ app.post("/api/curricula/generate", async (req, res) => {
       if (parsedData.course.name) cleanSubject = parsedData.course.name.trim();
       if (parsedData.course.generalObjective) generalObjective = parsedData.course.generalObjective.trim();
       if (parsedData.course.code) courseCode = parsedData.course.code.trim();
+
+      // Enriquecimiento con recursos didácticos
+      console.log("[SERVER] Enriqueciendo sesiones con DidacticResourceAgent...");
+      sessions = await didacticResourceAgent.enrichSessions(sessions, temario);
     }
 
     // 5. Package payload matching new DocxPayload structure
