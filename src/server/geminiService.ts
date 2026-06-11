@@ -37,40 +37,57 @@ export interface StructuredSyllabus {
  */
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+const DEFAULT_MODEL = "gemini-2.0-flash";
+
 /**
  * Robust retry utility to call Gemini API, attempting multiple models and retries before giving up.
  */
 export async function callGeminiWithRetry(
   contents: any,
   config: any,
-  preferredModel: string = "gemini-2.0-flash"
+  preferredModel: string = DEFAULT_MODEL
 ): Promise<any> {
   const ai = getGeminiClient();
-  // Familia moderna de modelos de Google Gemini (Serie 2.0)
+
+  // Sanitización inicial del parámetro preferredModel
+  if (preferredModel.includes("1.5") || preferredModel.includes("flash-latest") || preferredModel.includes("pro-latest")) {
+    console.log(`[Gemini Engine] Sanitizing preferredModel "${preferredModel}" -> "${DEFAULT_MODEL}"`);
+    preferredModel = DEFAULT_MODEL;
+  }
+
+  // Modelos vigentes de la familia moderna de Google Gemini (Serie 2.0)
   const modelsToTry = [
     preferredModel,
     "gemini-2.0-flash",
     "gemini-2.0-flash-lite"
   ];
+
   const maxRetriesPerModel = 2;
   let lastError: any = null;
 
   for (let model of modelsToTry) {
-    // Salvavidas centralizado: Sanitización defensiva de modelos obsoletos (1.5 o inferiores)
+    // Desinfectar el objeto config para evitar que arrastre modelos viejos o inexistentes
+    const finalConfig = { ...config };
+    if (finalConfig.model && (finalConfig.model.includes("1.5") || finalConfig.model.includes("flash-latest") || finalConfig.model.includes("pro-latest"))) {
+      console.log(`[Gemini Engine] Sanitizing config model "${finalConfig.model}" -> "${DEFAULT_MODEL}"`);
+      finalConfig.model = DEFAULT_MODEL;
+    }
+
+    // Forzar el uso de modelos vigentes si se detecta basura externa o modelos obsoletos
     if (model.includes("1.5") || model.includes("flash-latest") || model.includes("pro-latest")) {
-      console.log(`[Gemini Engine] Sanitizing obsolete model "${model}" -> "gemini-2.0-flash"`);
-      model = "gemini-2.0-flash";
+      console.log(`[Gemini Engine] Sanitizing obsolete model in loop "${model}" -> "${DEFAULT_MODEL}"`);
+      model = DEFAULT_MODEL;
     }
 
     for (let attempt = 1; attempt <= maxRetriesPerModel; attempt++) {
       try {
         console.log(`[Gemini Engine] Attempting call with model "${model}" - (Attempt ${attempt}/${maxRetriesPerModel})...`);
         
-        // Usamos el patrón que funciona en el resto del proyecto
+        // Usamos el patrón que funciona en el resto del proyecto con el modelo sanitizado
         const response = await (ai as any).models.generateContent({
           model: model,
           contents: contents,
-          config: config
+          config: finalConfig
         });
         
         console.log(`[Gemini Engine] Success! Called with model "${model}"`);
@@ -401,7 +418,7 @@ export async function askAgentToInspectXML(xmlContent: string): Promise<{ riskSc
   };
 
   try {
-    const response = await callGeminiWithRetry(contents, config, "gemini-2.0-flash");
+    const response = await callGeminiWithRetry(contents, config, DEFAULT_MODEL);
     const result = JSON.parse(response.text || '{"riskScore": 0, "issues": [], "riskyNodes": []}');
     console.log(`[Preflight Agent] Inspection complete. Risk Score: ${result.riskScore}`);
     return result;
@@ -446,7 +463,7 @@ export async function askAgentToHealXML(xmlCorrupto: string, errorLog: string): 
   };
 
   try {
-    const response = await callGeminiWithRetry(contents, config, "gemini-2.0-flash");
+    const response = await callGeminiWithRetry(contents, config, DEFAULT_MODEL);
     let repairedXml = response.text || xmlCorrupto;
     
     // Limpieza de posibles marcas markdown si la IA las incluye por error

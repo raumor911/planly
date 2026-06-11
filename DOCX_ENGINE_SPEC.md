@@ -5,7 +5,7 @@
 La solución se basa en una **Arquitectura de Preservación por Mutación**. En lugar de reconstruir el documento desde cero, el motor actúa directamente sobre el paquete OpenXML (DOCX) original, modificando únicamente los nodos de texto y clonando estructuras de tabla.
 
 ### Módulos
-1.  **Syllabus Parser**: Extrae contenido académico estructurado usando Gemini 1.5 Flash.
+1.  **Syllabus Parser**: Extrae contenido académico estructurado usando Gemini 2.5 Flash.
 2.  **Template Inspector**: Analiza el XML del DOCX para identificar tablas de sesiones y placeholders mediante heurísticas de contenido.
 3.  **Preservation Engine**: El núcleo del sistema. Maneja la clonación de filas (`w:tr`) y la inyección de texto en nodos `<w:t>`.
 4.  **Validation Engine**: Verifica que el documento resultante sea un ZIP válido y contenga los activos originales (imágenes, estilos).
