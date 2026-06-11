@@ -9,6 +9,7 @@ import {
 import { PreservationEngine } from './engine';
 import { InsertionAgent } from '../agents/InsertionAgent';
 import { ValidationEngine } from '../validation/validator';
+import { TemplateScanner } from './TemplateScanner';
 import { askAgentToHealXML, askAgentToInspectXML } from '../../geminiService';
 
 /**
@@ -92,12 +93,25 @@ export class DocxAgentOrchestrator {
       try {
         // 2. InsertionAgent realiza la inyección de datos del syllabus
         const docxPayload = snapshot.payload;
+        const sesiones = (docxPayload.sessions || docxPayload) as any[];
         
         console.log(`[DocxAgentOrchestrator] Preparando inyección para materia: ${docxPayload.course?.name}`);
-        console.log(`[DocxAgentOrchestrator] Sesiones detectadas: ${docxPayload.sessions?.length || 0}`);
+        console.log(`[DocxAgentOrchestrator] Sesiones detectadas: ${sesiones.length || 0}`);
         
-        // El agente ahora es universal: recibe el payload completo y decide el modo de inserción
-        const resultBuffer = this.insertionAgent.compile(preservedBuffer, docxPayload);
+        // Detección de modo y mapeo mediante TemplateScanner
+        const zipTemp = new PizZip(preservedBuffer);
+        const xmlDoc = zipTemp.file("word/document.xml")?.asText() || "";
+        const scanner = new TemplateScanner();
+        const scanResult = scanner.scan(xmlDoc);
+
+        const mapping = scanResult 
+          ? { mode: 'B' as const, columns: scanResult.mapping as any } 
+          : { mode: 'A' as const };
+
+        console.log(`[DocxAgentOrchestrator] Modo de inyección detectado: ${mapping.mode}`);
+
+        // El agente ahora es universal: recibe las sesiones y el mapeo
+        const resultBuffer = this.insertionAgent.compile(preservedBuffer, sesiones, mapping);
         
         // Recargamos el ZIP para validación
         const zip = new PizZip(resultBuffer);

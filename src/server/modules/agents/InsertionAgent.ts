@@ -140,12 +140,79 @@ export class InsertionAgent {
   }
 
   /**
-   * Método principal de compilación e inyección
+   * Método principal de compilación e inyección (v2 - Motor Universal)
    */
-  public compile(templateBuffer: Buffer, payload: any): Buffer {
-    // Log de Validación (Checklist de campo)
-    console.log("[DEBUG] Sesiones recibidas en InsertionAgent:", JSON.stringify(payload.sessions || payload, null, 2));
-    
+  public compile(
+    templateBuffer: Buffer, 
+    syllabus: any[], 
+    mapping: { mode: 'A' | 'B' | 'C', columns?: Record<number, string> } = { mode: 'A' }
+  ): Buffer {
+    const zip = new PizZip(templateBuffer);
+    let xml = zip.file("word/document.xml")?.asText() || "";
+
+    // SANEAMIENTO: Elimina etiquetas de formato dentro de los {{ placeholders }}
+    // Esto hace que {{ t e m a }} se convierta en {{tema}} para el regex
+    xml = xml.replace(/\{\{([\s\S]*?)\}\}/g, (match, content) => {
+        const clean = content.replace(/<\/?w:[a-z]+[^>]*>/g, "").replace(/\s+/g, "");
+        return `{{${clean}}}`;
+    });
+
+    if (mapping.mode === 'A') {
+      // MODO A: Búsqueda tolerante de fila molde con {{tema}}
+      const rowMatch = xml.match(/(<w:tr\b[^>]*>[\s\S]*?\{\{tema\}\}[\s\S]*?<\/w:tr>)/i);
+      
+      if (!rowMatch) {
+          console.error("[InsertionAgent] CRÍTICO: No se encontró la fila con {{tema}}.");
+          // Si no hay fila molde, intentamos inyectar placeholders simples al menos
+          return this.legacyCompile(templateBuffer, syllabus);
+      }
+
+      const rowTemplate = rowMatch[1];
+      let generatedRowsXml = "";
+
+      // Generación de filas
+      for (const session of syllabus) {
+          let row = rowTemplate;
+          const replacements = {
+              num: session.num || "",
+              tema: session.topic || session.tema || "",
+              actividad: session.activity || session.actividad || "",
+              objetivo: session.objective || session.objetivo || "",
+              recursos: session.resources || ""
+          };
+
+          for (const [key, val] of Object.entries(replacements)) {
+              row = row.replace(new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, "g"), this.escapeXml(String(val)));
+          }
+          generatedRowsXml += row;
+      }
+
+      xml = xml.replace(rowTemplate, generatedRowsXml);
+      
+      // Inyectar placeholders de curso (fuera de la tabla)
+      const courseInfo = (syllabus as any).course || {};
+      const courseReplacements: Record<string, string> = {
+        'NOMBRE_ASIGNATURA': courseInfo.name || "",
+        'OBJETIVO_GENERAL': courseInfo.generalObjective || "",
+        'CLAVE': courseInfo.code || ""
+      };
+
+      for (const [key, val] of Object.entries(courseReplacements)) {
+        xml = xml.replace(new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, "g"), this.escapeXml(String(val)));
+      }
+
+      zip.file("word/document.xml", xml);
+      return zip.generate({ type: "nodebuffer", compression: "DEFLATE" });
+    } else {
+      // MODO B/C: Usar lógica de mapeo semántico (Legacy/Mejorado)
+      return this.legacyCompile(templateBuffer, syllabus);
+    }
+  }
+
+  /**
+   * Mantiene la lógica original para compatibilidad y modos complejos
+   */
+  private legacyCompile(templateBuffer: Buffer, payload: any): Buffer {
     const zip = new PizZip(templateBuffer);
     const fileKeys = Object.keys(zip.files);
 

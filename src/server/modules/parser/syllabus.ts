@@ -1,5 +1,5 @@
-import { GoogleGenAI, Type, Schema } from "@google/genai";
-import { getGeminiClient, callGeminiWithRetry } from "../../geminiService";
+import { Type, Schema } from "@google/genai";
+import { callGeminiWithRetry } from "../../geminiService";
 
 export interface SyllabusCourse {
   name: string;
@@ -28,11 +28,23 @@ export interface SyllabusEvaluation {
 export interface SyllabusResult {
   course: {
     name: string;
-    code: string;
     generalObjective: string;
-    competencies: string[];
+    code?: string;
+    competencies?: string[];
   };
-  sessions: any[];
+  sessions: Array<{
+    num: number;
+    topic: string;
+    activity: string;
+    resources: string;
+    objective?: string;
+    week?: string;
+    unit?: string;
+    content?: string;
+    evidence?: string;
+    evaluation?: string;
+    bibliography?: string;
+  }>;
   bibliography: string[];
   evaluation: any[];
   warnings: string[];
@@ -43,7 +55,7 @@ export class SyllabusParser {
    * Realiza un análisis taxonómico infalible de temarios académicos.
    * La firma se mantiene como Promise<any> por requerimiento técnico.
    */
-  public async parse(text: string, numWeeks: number = 14): Promise<any> {
+  public async parse(text: string): Promise<any> {
     const instructions = `Actúa como un clasificador curricular universitario riguroso. Tu objetivo es realizar un análisis taxonómico infalible del temario académico proporcionado.
     
     INSTRUCCIONES DE PROCESAMIENTO:
@@ -65,14 +77,14 @@ export class SyllabusParser {
           type: Type.OBJECT,
           properties: {
             name: { type: Type.STRING },
-            code: { type: Type.STRING },
             generalObjective: { type: Type.STRING },
+            code: { type: Type.STRING },
             competencies: {
               type: Type.ARRAY,
               items: { type: Type.STRING }
             }
           },
-          required: ["name", "code", "generalObjective", "competencies"]
+          required: ["name", "generalObjective"]
         },
         sessions: {
           type: Type.ARRAY,
@@ -80,23 +92,18 @@ export class SyllabusParser {
             type: Type.OBJECT,
             properties: {
               num: { type: Type.INTEGER },
+              topic: { type: Type.STRING },
+              activity: { type: Type.STRING },
+              resources: { type: Type.STRING },
+              objective: { type: Type.STRING },
               week: { type: Type.STRING },
               unit: { type: Type.STRING },
-              objective: { type: Type.STRING },
-              topic: { type: Type.STRING },
-              subtopics: {
-                type: Type.ARRAY,
-                items: { type: Type.STRING }
-              },
               content: { type: Type.STRING },
-              activity: { type: Type.STRING },
-              strategy: { type: Type.STRING },
-              resources: { type: Type.STRING },
               evidence: { type: Type.STRING },
               evaluation: { type: Type.STRING },
               bibliography: { type: Type.STRING }
             },
-            required: ["num", "topic", "activity", "objective"]
+            required: ["num", "topic", "activity", "resources"]
           }
         },
         bibliography: {
