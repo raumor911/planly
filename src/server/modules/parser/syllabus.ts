@@ -26,11 +26,15 @@ export interface SyllabusEvaluation {
 }
 
 export interface SyllabusResult {
-  course: SyllabusCourse;
-  topics: SyllabusTopic[];
-  activities: SyllabusActivity[];
-  evaluation: SyllabusEvaluation[];
-  resources: string[];
+  course: {
+    name: string;
+    code: string;
+    generalObjective: string;
+    competencies: string[];
+  };
+  sessions: any[];
+  bibliography: string[];
+  evaluation: any[];
   warnings: string[];
 }
 
@@ -62,37 +66,42 @@ export class SyllabusParser {
           properties: {
             name: { type: Type.STRING },
             code: { type: Type.STRING },
-            level: { type: Type.STRING },
-            program: { type: Type.STRING },
-            generalObjective: { type: Type.STRING }
+            generalObjective: { type: Type.STRING },
+            competencies: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING }
+            }
           },
-          required: ["name", "code", "level", "program", "generalObjective"]
+          required: ["name", "code", "generalObjective", "competencies"]
         },
-        topics: {
+        sessions: {
           type: Type.ARRAY,
           items: {
             type: Type.OBJECT,
             properties: {
-              number: { type: Type.STRING },
-              title: { type: Type.STRING },
+              num: { type: Type.INTEGER },
+              week: { type: Type.STRING },
+              unit: { type: Type.STRING },
+              objective: { type: Type.STRING },
+              topic: { type: Type.STRING },
               subtopics: {
                 type: Type.ARRAY,
                 items: { type: Type.STRING }
-              }
+              },
+              content: { type: Type.STRING },
+              activity: { type: Type.STRING },
+              strategy: { type: Type.STRING },
+              resources: { type: Type.STRING },
+              evidence: { type: Type.STRING },
+              evaluation: { type: Type.STRING },
+              bibliography: { type: Type.STRING }
             },
-            required: ["number", "title", "subtopics"]
+            required: ["num", "topic", "activity", "objective"]
           }
         },
-        activities: {
+        bibliography: {
           type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              type: { type: Type.STRING, enum: ["evidencia", "estrategia"] },
-              description: { type: Type.STRING }
-            },
-            required: ["type", "description"]
-          }
+          items: { type: Type.STRING }
         },
         evaluation: {
           type: Type.ARRAY,
@@ -105,16 +114,12 @@ export class SyllabusParser {
             required: ["activity", "percentage"]
           }
         },
-        resources: {
-          type: Type.ARRAY,
-          items: { type: Type.STRING }
-        },
         warnings: {
           type: Type.ARRAY,
           items: { type: Type.STRING }
         }
       },
-      required: ["course", "topics", "activities", "evaluation", "resources", "warnings"]
+      required: ["course", "sessions", "bibliography", "evaluation", "warnings"]
     };
 
     const prompt = `${instructions}
@@ -141,14 +146,12 @@ export class SyllabusParser {
     console.log(`[SYLLABUS] Course name: ${resultJson.course.name}`);
     console.log(`[SYLLABUS] Course code: ${resultJson.course.code}`);
     console.log(`[SYLLABUS] General objective detected: ${!!resultJson.course.generalObjective}`);
-    console.log(`[SYLLABUS] Topics detected: ${resultJson.topics.length}`);
-    if (resultJson.topics.length > 0) {
-      console.log(`[SYLLABUS] Topic 1: ${resultJson.topics[0].title}`);
-      console.log(`[SYLLABUS] Subtopics for topic 1: ${resultJson.topics[0].subtopics.length}`);
+    console.log(`[SYLLABUS] Sessions detected: ${resultJson.sessions.length}`);
+    if (resultJson.sessions.length > 0) {
+      console.log(`[SYLLABUS] Session 1 topic: ${resultJson.sessions[0].topic}`);
     }
-    console.log(`[SYLLABUS] Activities detected: ${resultJson.activities.length}`);
     console.log(`[SYLLABUS] Evaluation items detected: ${resultJson.evaluation.length}`);
-    console.log(`[SYLLABUS] Resources detected: ${resultJson.resources.length}`);
+    console.log(`[SYLLABUS] Bibliography items detected: ${resultJson.bibliography.length}`);
     console.log(`[SYLLABUS] Warnings: ${JSON.stringify(resultJson.warnings)}`);
 
     return resultJson;

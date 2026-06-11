@@ -1,10 +1,23 @@
 export interface DocxSession {
   num: number;
-  fecha: string;
-  tema: string;
-  actividad: string;
-  objetivo: string;
+  week?: string;
+  date?: string;
+  unit?: string;
+  objective?: string;
+  topic?: string;
+  subtopics?: string[];
+  content?: string;
+  activity?: string;
+  strategy?: string;
+  resources?: string;
+  evidence?: string;
+  evaluation?: string;
+  bibliography?: string;
+  dateReal?: string;
+  notes?: string;
 }
+
+export type SessionRole = keyof DocxSession;
 
 export interface EvaluationItem {
   name: string;
@@ -46,7 +59,7 @@ export interface DocxPayload {
 }
 
 export interface TableRoleMap {
-  [colIdx: number]: keyof DocxSession;
+  [colIdx: number]: SessionRole;
 }
 
 export interface TableMatch {

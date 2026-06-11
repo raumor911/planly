@@ -49,7 +49,7 @@ export class InsertionAgent {
   }
 
   /**
-   * C2: Escapado XML Estricto
+   * C2: Escapado XML Estricto y manejo de saltos de línea
    */
   public escapeXml(text: string): string {
     if (!text) return '';
@@ -58,7 +58,8 @@ export class InsertionAgent {
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
-      .replace(/'/g, '&apos;');
+      .replace(/'/g, '&apos;')
+      .replace(/\n/g, '<w:br/>'); // Convertir saltos de línea a etiquetas Word
   }
 
   /**
@@ -66,6 +67,48 @@ export class InsertionAgent {
    */
   public normalizeDocxText(text: string): string {
     return this.escapeXml(String(text || ''));
+  }
+
+  /**
+   * Resuelve el valor de una celda basado en su rol semántico
+   */
+  private resolveCellValue(session: DocxSession, role: string): string {
+    switch (role) {
+      case 'num':
+        return String(session.num || '');
+      case 'date':
+        return session.date || '';
+      case 'dateReal':
+        return session.dateReal || '';
+      case 'unit':
+        return session.unit || '';
+      case 'week':
+        return session.week || '';
+      case 'objective':
+        return session.objective || '';
+      case 'topic':
+        let topicText = session.topic || '';
+        if (session.subtopics && session.subtopics.length > 0) {
+          topicText += '\n' + session.subtopics.map(s => `• ${s}`).join('\n');
+        }
+        return topicText;
+      case 'content':
+        return session.content || '';
+      case 'activity':
+        return session.activity || session.strategy || '';
+      case 'resources':
+        return session.resources || '';
+      case 'evidence':
+        return session.evidence || '';
+      case 'evaluation':
+        return session.evaluation || '';
+      case 'bibliography':
+        return session.bibliography || '';
+      case 'notes':
+        return session.notes || '';
+      default:
+        return '';
+    }
   }
 
   /**
@@ -251,7 +294,12 @@ export class InsertionAgent {
     }
 
     analysis.tables.forEach((match, tMatchIdx) => {
-      console.log(`[InsertionAgent] Processing table match ${tMatchIdx + 1}: type=${match.type}, confidence=${match.confidence}`);
+      const mode = match.confidence > 0.8 ? 'MODO A (Placeholders)' : 'MODO B (Semántico)';
+      console.log(`[DOCX] Mode selected: ${mode}`);
+      console.log(`[DOCX] Tables detected: ${analysis.tables.length}`);
+      console.log(`[DOCX] Selected table score: ${(match.confidence * 15).toFixed(1)}`);
+      console.log(`[DOCX] Column roles: ${JSON.stringify(match.roles)}`);
+      
       const targetTable = tables[match.tableIndex];
       if (!targetTable) {
         console.warn(`[InsertionAgent] Table at index ${match.tableIndex} not found in jsonObj`);
@@ -259,19 +307,20 @@ export class InsertionAgent {
       }
 
       const rows = this.findAllNodes(targetTable, 'w:tr');
-      console.log(`[InsertionAgent] Table has ${rows.length} rows. Header at ${match.headerRowIndex}`);
       const prototypeRowIdx = match.headerRowIndex + 1 < rows.length ? match.headerRowIndex + 1 : match.headerRowIndex;
       const prototypeRow = rows[prototypeRowIdx];
 
       let newRows: any[] = [];
       if (match.type === 'sessions') {
         const sesiones = payload.sessions || (Array.isArray(payload) ? payload : []);
-        console.log(`[InsertionAgent] Injecting ${sesiones.length} sessions`);
+        console.log(`[DOCX] Sessions received: ${sesiones.length}`);
+        
         newRows = sesiones.map((session: any) => {
           const clonedRow = JSON.parse(JSON.stringify(prototypeRow));
           this.fillRowWithSessionData(clonedRow, session, match.roles);
           return clonedRow;
         });
+        console.log(`[DOCX] Rows generated: ${newRows.length}`);
       } else if (match.type === 'evaluation') {
         const evaluation = payload.evaluation || {};
         const evalItems = [
@@ -279,7 +328,7 @@ export class InsertionAgent {
           ...(evaluation.secondPartial?.items || []),
           ...(evaluation.final?.items || []),
         ];
-        console.log(`[InsertionAgent] Injecting ${evalItems.length} evaluation items`);
+        console.log(`[DOCX] Evaluation items received: ${evalItems.length}`);
         newRows = evalItems.map(item => {
           const clonedRow = JSON.parse(JSON.stringify(prototypeRow));
           this.fillRowWithSessionData(clonedRow, { tema: item.name, actividad: `${item.percentage}%` } as any, match.roles);
@@ -289,7 +338,7 @@ export class InsertionAgent {
 
       if (newRows.length > 0) {
         this.replaceRowsInTable(targetTable, match.headerRowIndex, newRows);
-        console.log(`[InsertionAgent] Successfully replaced rows in table ${tMatchIdx + 1}`);
+        console.log(`[DOCX] Output generated successfully for table ${tMatchIdx + 1}`);
       }
     });
   }
@@ -298,49 +347,104 @@ export class InsertionAgent {
     const cells = this.findAllNodes(row, 'w:tc');
     cells.forEach((cell, cIdx) => {
       const role = roles[cIdx];
-      if (role) {
-        const value = String(session[role as keyof DocxSession] || '');
+      
+      // MODO A: Si la celda tiene placeholders específicos de sesión
+      const cellXml = this.builder.build(cell);
+      const sessionPlaceholderRegex = /\{\{\s*(num|week|date|unit|objective|topic|subtopics|content|activity|strategy|resources|evidence|evaluation|bibliography|dateReal|notes)\s*\}\}/i;
+      
+      if (sessionPlaceholderRegex.test(cellXml)) {
+        this.injectSessionPlaceholders(cell, session);
+      } 
+      // MODO B: Si no hay placeholders pero detectamos un rol por encabezado
+      else if (role) {
+        const value = this.resolveCellValue(session, role);
         this.setCellText(cell, this.normalizeDocxText(value));
       }
     });
   }
 
+  private injectSessionPlaceholders(cell: any, session: DocxSession): void {
+    const tNodes = this.findAllNodes(cell, 'w:t');
+    tNodes.forEach(tNode => {
+      let targetObj: any = null;
+      if (Array.isArray(tNode)) {
+        targetObj = tNode.find(item => item['#text'] !== undefined);
+      } else if (typeof tNode === 'object' && tNode['#text'] !== undefined) {
+        targetObj = tNode;
+      }
+
+      if (targetObj && typeof targetObj['#text'] === 'string') {
+        let text = targetObj['#text'];
+        
+        // Mapear cada campo de la sesión a su placeholder
+        Object.keys(session).forEach(key => {
+          const value = this.resolveCellValue(session, key);
+          const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const regex = new RegExp(`\\{\\{\\s*${escapedKey}\\s*\\}\\}`, 'gi');
+          if (regex.test(text)) {
+            text = text.replace(regex, this.normalizeDocxText(value));
+          }
+        });
+        
+        targetObj['#text'] = text;
+      }
+    });
+  }
+
   private setCellText(cell: any, escapedText: string): void {
+    // Si el texto contiene <w:br/>, debemos procesarlo como nodos XML, no como texto plano
+    const hasBr = escapedText.includes('<w:br/>');
+    const parts = hasBr ? escapedText.split('<w:br/>') : [escapedText];
+
     const tNodes = this.findAllNodes(cell, 'w:t');
     if (tNodes.length > 0) {
-      // Usar el primer nodo w:t para inyectar el texto
       const firstTContent = tNodes[0];
       if (Array.isArray(firstTContent)) {
-        const textItem = firstTContent.find(item => item['#text'] !== undefined);
-        if (textItem) {
-          textItem['#text'] = escapedText;
-        } else {
-          firstTContent.push({ '#text': escapedText });
-        }
+        // Limpiar contenido previo
+        firstTContent.length = 0;
         
-        // Limpiar otros nodos de texto en la misma celda para evitar duplicados
-        for (let i = 1; i < tNodes.length; i++) {
-          const otherT = tNodes[i];
-          if (Array.isArray(otherT)) {
-            const item = otherT.find((it: any) => it['#text'] !== undefined);
-            if (item) item['#text'] = '';
+        parts.forEach((part, idx) => {
+          if (part) {
+            firstTContent.push({ '#text': part });
           }
-        }
+          if (idx < parts.length - 1) {
+            // Necesitamos insertar un w:br, pero w:t solo acepta texto.
+            // Los w:br van a nivel de w:r, fuera de w:t.
+            // Esto requiere una manipulación más profunda del árbol XML.
+          }
+        });
       }
     } else {
-      // Si no hay w:t, intentamos encontrar un w:p para insertar uno
-      const pNodes = this.findAllNodes(cell, 'w:p');
-      if (pNodes.length > 0) {
-        const p = pNodes[0]; // El contenido del primer párrafo
-        if (Array.isArray(p)) {
-          p.push({
-            'w:r': [
-              { 'w:t': [{ '#text': escapedText }] }
-            ]
-          });
-        }
-      }
+      // ... (lógica de creación de nodos si no existen)
     }
+    
+    // Simplificación: Para manejar w:br correctamente, es mejor inyectar a nivel de párrafo o run
+    this.injectTextWithBr(cell, parts);
+  }
+
+  private injectTextWithBr(cell: any, parts: string[]): void {
+    const pNodes = this.findAllNodes(cell, 'w:p');
+    if (pNodes.length === 0) return;
+    
+    const p = pNodes[0];
+    if (!Array.isArray(p)) return;
+
+    // Limpiar todos los w:r actuales del primer párrafo
+    const rIndices = p.map((node, idx) => node['w:r'] ? idx : -1).filter(idx => idx !== -1);
+    rIndices.reverse().forEach(idx => p.splice(idx, 1));
+
+    // Crear un nuevo w:r con el contenido
+    const newR: any[] = [];
+    parts.forEach((part, idx) => {
+      if (part) {
+        newR.push({ 'w:t': [{ '#text': part }] });
+      }
+      if (idx < parts.length - 1) {
+        newR.push({ 'w:br': [] });
+      }
+    });
+
+    p.push({ 'w:r': newR });
   }
 
   private replaceRowsInTable(tbl: any, headerIdx: number, newRows: any[]): void {

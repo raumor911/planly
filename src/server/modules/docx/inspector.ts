@@ -43,15 +43,15 @@ export class TemplateInspector {
     rows.forEach((row, rIdx) => {
       const cells = this.findAllNodes(row, 'w:tc');
       
-      // Try Sessions detection
-      const sessionsRoles = this.detectSessionsRoles(cells);
-      if (sessionsRoles.count >= 2) {
-        const confidence = sessionsRoles.count / 5;
+      // Modo B: Detección Semántica con Sistema de Puntaje
+      const sessionsAnalysis = this.scoreSessionsTable(cells);
+      if (sessionsAnalysis.score >= 4) { // Umbral mínimo para considerar tabla probable
+        const confidence = sessionsAnalysis.score / 15; // Score normalizado
         if (!bestMatch || (bestMatch.type === 'sessions' && confidence > bestMatch.confidence) || bestMatch.type !== 'sessions') {
           bestMatch = { 
             tableIndex: index, 
             headerRowIndex: rIdx, 
-            roles: sessionsRoles.roles, 
+            roles: sessionsAnalysis.roles, 
             confidence, 
             type: 'sessions' 
           };
@@ -77,18 +77,57 @@ export class TemplateInspector {
     return bestMatch;
   }
 
-  private detectSessionsRoles(cells: any[]): { roles: TableRoleMap, count: number } {
+  private scoreSessionsTable(cells: any[]): { roles: TableRoleMap, score: number } {
     const roles: TableRoleMap = {};
-    let count = 0;
+    let score = 0;
+    
     cells.forEach((cell, cIdx) => {
       const text = this.getCellText(cell).toLowerCase();
-      if (this.isSessionNum(text)) { roles[cIdx] = 'num'; count++; }
-      else if (this.isDate(text)) { roles[cIdx] = 'fecha'; count++; }
-      else if (this.isTopic(text)) { roles[cIdx] = 'tema'; count++; }
-      else if (this.isActivity(text)) { roles[cIdx] = 'actividad'; count++; }
-      else if (this.isObjective(text)) { roles[cIdx] = 'objetivo'; count++; }
+      
+      // Sistema de puntaje semántico
+      if (this.isRole(text, ['num', 'semana', 'clase', 'no.', 'número', 'secuencia', 'encuentro'])) {
+        roles[cIdx] = 'num';
+        score += 2;
+      } else if (this.isRole(text, ['fecha', 'fecha programada', 'calendario', 'cronograma', 'periodo'])) {
+        roles[cIdx] = 'date';
+        score += 2;
+      } else if (this.isRole(text, ['fecha real', 'fecha realizada', 'fecha de ejecución'])) {
+        roles[cIdx] = 'dateReal';
+        score += 2;
+      } else if (this.isRole(text, ['objetivo', 'objetivo particular', 'propósito', 'competencia', 'aprendizaje esperado'])) {
+        roles[cIdx] = 'objective';
+        score += 3;
+      } else if (this.isRole(text, ['tema', 'temas', 'subtemas', 'contenido', 'unidad', 'saber', 'eje temático'])) {
+        roles[cIdx] = 'topic';
+        score += 3;
+      } else if (this.isRole(text, ['actividad', 'actividades', 'estrategia', 'didáctica', 'secuencia didáctica', 'desarrollo'])) {
+        roles[cIdx] = 'activity';
+        score += 3;
+      } else if (this.isRole(text, ['recursos', 'materiales', 'plataforma', 'tic'])) {
+        roles[cIdx] = 'resources';
+        score += 2;
+      } else if (this.isRole(text, ['evidencia', 'producto', 'entregable'])) {
+        roles[cIdx] = 'evidence';
+        score += 2;
+      } else if (this.isRole(text, ['evaluación', 'criterios', 'instrumento', 'ponderación'])) {
+        roles[cIdx] = 'evaluation';
+        score += 2;
+      } else if (this.isRole(text, ['bibliografía', 'referencias', 'fuentes', 'consulta'])) {
+        roles[cIdx] = 'bibliography';
+        score += 1;
+      }
     });
-    return { roles, count };
+
+    return { roles, score };
+  }
+
+  private isRole(text: string, keywords: string[]): boolean {
+    return keywords.some(kw => {
+      // Búsqueda exacta o contenida con límites de palabra
+      const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(`\\b${escaped}\\b`, 'i');
+      return regex.test(text) || text.includes(kw.toLowerCase());
+    });
   }
 
   private detectEvaluationRoles(cells: any[]): { roles: TableRoleMap, count: number } {
@@ -154,26 +193,5 @@ export class TemplateInspector {
       });
     }
     return results;
-  }
-
-  // Heuristics
-  private isSessionNum(text: string): boolean {
-    return /sesi[oó]n|semana|no\.|n[uú]m|clase|unidad/i.test(text);
-  }
-
-  private isDate(text: string): boolean {
-    return /fecha|calendario|programada|cronograma|periodo/i.test(text);
-  }
-
-  private isTopic(text: string): boolean {
-    return /tema|contenido|subtema|unidad|materia|t[ií]tulo/i.test(text);
-  }
-
-  private isActivity(text: string): boolean {
-    return /actividad|estrategia|did[aá]ct|propuest|taller|laboratorio/i.test(text);
-  }
-
-  private isObjective(text: string): boolean {
-    return /objetivo|competencia|particular|prop[oó]sito|aprendizaje/i.test(text);
   }
 }

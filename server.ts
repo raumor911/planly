@@ -254,13 +254,21 @@ app.post("/api/curricula/generate", async (req, res) => {
       // 1. Structure raw text with the new taxonomic SyllabusParser
       const parsedData = await syllabusParser.parse(temario, sessionsCount);
 
-      // Map taxonomic topics to sessions for the DOCX engine
-      sessions = parsedData.topics.map((topic: any, idx: number) => ({
-        num: idx + 1,
-        fecha: getSessionDate(idx, fechaInicio),
-        tema: topic.title,
-        actividad: parsedData.activities[idx % parsedData.activities.length]?.description || "Análisis de contenido",
-        objetivo: parsedData.course.generalObjective
+      // Map structured sessions to DocxPayload
+      sessions = parsedData.sessions.map((s: any, idx: number) => ({
+        num: s.num || (idx + 1),
+        week: s.week || String(Math.floor(idx / 1) + 1), // Simplificación: 1 sesión por semana si no viene
+        date: getSessionDate(idx, fechaInicio),
+        unit: s.unit || "",
+        objective: s.objective || parsedData.course.generalObjective,
+        topic: s.topic || "",
+        subtopics: s.subtopics || [],
+        content: s.content || "",
+        activity: s.activity || s.strategy || "",
+        resources: s.resources || "",
+        evidence: s.evidence || "",
+        evaluation: s.evaluation || "",
+        bibliography: s.bibliography || ""
       }));
 
       if (parsedData.course.name) cleanSubject = parsedData.course.name.trim();
@@ -275,13 +283,7 @@ app.post("/api/curricula/generate", async (req, res) => {
         code: courseCode,
         generalObjective: generalObjective
       },
-      sessions: sessions.map((s: any, idx: number) => ({
-        num: s.num || (idx + 1),
-        fecha: s.fecha || getSessionDate(idx, fechaInicio),
-        tema: s.tema || "",
-        actividad: s.actividad || "",
-        objetivo: s.objetivo || ""
-      })),
+      sessions: sessions,
       bibliography: [],
       evaluation: {
         firstPartial: { period: "1er Parcial", items: [{ name: "Examen", percentage: parseInt(examenPct) || 30 }] },

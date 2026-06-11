@@ -91,14 +91,13 @@ export class DocxAgentOrchestrator {
       
       try {
         // 2. InsertionAgent realiza la inyección de datos del syllabus
-        // EXTRACCIÓN EXPLÍCITA: Aseguramos que pasamos un array de sesiones para la tabla
-        const syllabusData = snapshot.payload;
-        const sesiones = Array.isArray(syllabusData) ? syllabusData : (syllabusData.sessions || []);
+        const docxPayload = snapshot.payload;
         
-        console.log(`[DocxAgentOrchestrator] Preparando inyección de ${sesiones.length} sesiones.`);
+        console.log(`[DocxAgentOrchestrator] Preparando inyección para materia: ${docxPayload.course?.name}`);
+        console.log(`[DocxAgentOrchestrator] Sesiones detectadas: ${docxPayload.sessions?.length || 0}`);
         
-        // Usamos la extracción explícita de sesiones solicitada para asegurar la inyección en tablas
-        const resultBuffer = this.insertionAgent.compile(preservedBuffer, sesiones);
+        // El agente ahora es universal: recibe el payload completo y decide el modo de inserción
+        const resultBuffer = this.insertionAgent.compile(preservedBuffer, docxPayload);
         
         // Recargamos el ZIP para validación
         const zip = new PizZip(resultBuffer);
