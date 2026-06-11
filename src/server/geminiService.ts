@@ -43,23 +43,25 @@ const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 export async function callGeminiWithRetry(
   contents: any,
   config: any,
-  preferredModel: string = "gemini-1.5-flash"
+  preferredModel: string = "gemini-2.0-flash"
 ): Promise<any> {
   const ai = getGeminiClient();
-  // Intentamos con prefijos explícitos y modelos estables
+  // Familia moderna de modelos de Google Gemini (Serie 2.0)
   const modelsToTry = [
     preferredModel,
-    `models/${preferredModel}`,
-    "gemini-1.5-flash",
-    "models/gemini-1.5-flash",
-    "gemini-1.5-flash-latest",
-    "gemini-1.5-pro",
-    "gemini-1.5-pro-latest"
+    "gemini-2.0-flash",
+    "gemini-2.0-flash-lite"
   ];
   const maxRetriesPerModel = 2;
   let lastError: any = null;
 
-  for (const model of modelsToTry) {
+  for (let model of modelsToTry) {
+    // Salvavidas centralizado: Sanitización defensiva de modelos obsoletos (1.5 o inferiores)
+    if (model.includes("1.5") || model.includes("flash-latest") || model.includes("pro-latest")) {
+      console.log(`[Gemini Engine] Sanitizing obsolete model "${model}" -> "gemini-2.0-flash"`);
+      model = "gemini-2.0-flash";
+    }
+
     for (let attempt = 1; attempt <= maxRetriesPerModel; attempt++) {
       try {
         console.log(`[Gemini Engine] Attempting call with model "${model}" - (Attempt ${attempt}/${maxRetriesPerModel})...`);
@@ -399,7 +401,7 @@ export async function askAgentToInspectXML(xmlContent: string): Promise<{ riskSc
   };
 
   try {
-    const response = await callGeminiWithRetry(contents, config, "gemini-1.5-flash-latest");
+    const response = await callGeminiWithRetry(contents, config, "gemini-2.0-flash");
     const result = JSON.parse(response.text || '{"riskScore": 0, "issues": [], "riskyNodes": []}');
     console.log(`[Preflight Agent] Inspection complete. Risk Score: ${result.riskScore}`);
     return result;
@@ -444,7 +446,7 @@ export async function askAgentToHealXML(xmlCorrupto: string, errorLog: string): 
   };
 
   try {
-    const response = await callGeminiWithRetry(contents, config, "gemini-1.5-pro");
+    const response = await callGeminiWithRetry(contents, config, "gemini-2.0-flash");
     let repairedXml = response.text || xmlCorrupto;
     
     // Limpieza de posibles marcas markdown si la IA las incluye por error
