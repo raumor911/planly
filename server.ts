@@ -66,8 +66,8 @@ app.post("/api/projects/:id/render-docx", async (req, res) => {
 
 app.post("/api/docx/preflight", async (req, res) => {
   // --- CAPA DEFENSIVA ESTRICTA ---
-  if (req.body.model && !req.body.model.includes("2.0")) {
-    req.body.model = "gemini-2.0-flash";
+  if (req.body.model && !req.body.model.includes("2.0") && !req.body.model.includes("2.5")) {
+    req.body.model = "gemini-2.5-flash";
   }
 
   const { templateBase64 } = req.body;
@@ -86,11 +86,11 @@ app.post("/api/docx/preflight", async (req, res) => {
 
 app.post("/api/docx/generate-safe", async (req, res) => {
   // --- CAPA DEFENSIVA ESTRICTA ---
-  if (req.body.model && !req.body.model.includes("2.0")) {
-    req.body.model = "gemini-2.0-flash";
+  if (req.body.model && !req.body.model.includes("2.0") && !req.body.model.includes("2.5")) {
+    req.body.model = "gemini-2.5-flash";
   }
-  if (req.body.userOptions?.preferredModel && !req.body.userOptions.preferredModel.includes("2.0")) {
-    req.body.userOptions.preferredModel = "gemini-2.0-flash";
+  if (req.body.userOptions?.preferredModel && !req.body.userOptions.preferredModel.includes("2.0") && !req.body.userOptions.preferredModel.includes("2.5")) {
+    req.body.userOptions.preferredModel = "gemini-2.5-flash";
   }
 
   const snapshot: GenerationSnapshot = req.body;
@@ -165,11 +165,11 @@ app.post("/api/curricula/extract-text", async (req, res) => {
 // Generation controller endpoint separated from the monolithic body
 app.post("/api/curricula/generate", async (req, res) => {
   // --- CAPA DEFENSIVA ESTRICTA CONTRA MODELOS OBSOLETOS ---
-  const DEFAULT_TARGET = "gemini-2.0-flash";
-  if (req.body.model && !req.body.model.includes("2.0")) {
+  const DEFAULT_TARGET = "gemini-2.5-flash";
+  if (req.body.model && !req.body.model.includes("2.0") && !req.body.model.includes("2.5")) {
     req.body.model = DEFAULT_TARGET;
   }
-  if (req.body.preferredModel && !req.body.preferredModel.includes("2.0")) {
+  if (req.body.preferredModel && !req.body.preferredModel.includes("2.0") && !req.body.preferredModel.includes("2.5")) {
     req.body.preferredModel = DEFAULT_TARGET;
   }
 

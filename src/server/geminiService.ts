@@ -37,7 +37,7 @@ export interface StructuredSyllabus {
  */
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-const DEFAULT_MODEL = "gemini-2.0-flash";
+const DEFAULT_MODEL = "gemini-2.5-flash";
 
 /**
  * Robust retry utility to call Gemini API, attempting multiple models and retries before giving up.
@@ -55,11 +55,12 @@ export async function callGeminiWithRetry(
     preferredModel = DEFAULT_MODEL;
   }
 
-  // Modelos vigentes de la familia moderna de Google Gemini (Serie 2.0)
+  // Modelos vigentes de la familia moderna de Google Gemini (Serie 2.5 / 2.0)
   const modelsToTry = [
     preferredModel,
+    "gemini-2.5-flash",
     "gemini-2.0-flash",
-    "gemini-2.0-flash-lite"
+    "gemini-2.5-flash-lite"
   ];
 
   const maxRetriesPerModel = 2;
