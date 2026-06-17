@@ -63,9 +63,13 @@ export class DidacticResourceAgent {
       
       TAREA: Para la actividad "${act.description}" con estrategia pedagógica "${act.strategy}" dentro del tema "${topic}", sugiere 2-3 recursos didácticos específicos.
       
+      CONTEXTO DEL TEMARIO (Referencia):
+      ${originalText ? originalText.substring(0, 3000) : 'No disponible'}
+      
       REGLAS:
       1. Prioriza recursos que faciliten la ejecución de la estrategia mencionada.
-      2. Devuelve exclusivamente un JSON: {"resources": ["recurso1", "recurso2"]}.
+      2. Usa el contexto del temario para que los recursos sean coherentes con el nivel y la materia.
+      3. Devuelve exclusivamente un JSON: {"resources": ["recurso1", "recurso2"]}.
       
       Respuesta JSON:`;
 
@@ -101,7 +105,7 @@ export class DidacticResourceAgent {
     TAREA: Define 3 recursos didácticos específicos y aplicables para una sesión sobre el tema: "${topic}".
     
     REGLAS:
-    1. Si en el contexto proporcionado "${originalText ? originalText.substring(0, 1500) : 'N/A'}" ya se mencionan recursos, prioriza y formaliza esos.
+    1. Si en el contexto proporcionado "${originalText ? originalText.substring(0, 3000) : 'N/A'}" ya se mencionan recursos, prioriza y formaliza esos.
     2. Si no hay recursos en el contexto, sugiere 3 recursos innovadores y prácticos (ej. "Simulador de estados financieros", "Software de auditoría", "Caso de estudio de la SHCP", "Plataforma Kahoot para evaluación rápida").
     3. Asegura que cada recurso tenga una relación directa y lógica con la naturaleza del tema.
     4. Respuesta: Devuelve exclusivamente un JSON con este formato: {"resources": ["recurso1", "recurso2", "recurso3"]}. No añadas explicaciones adicionales.

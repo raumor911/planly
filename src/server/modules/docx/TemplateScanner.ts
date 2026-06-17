@@ -124,7 +124,7 @@ export class TemplateScanner {
         return textItem ? String(textItem['#text']) : '';
       }
       return '';
-    }).join(' ');
+    }).join(''); // UNIÓN ESTRICTA: Sin espacios para evitar romper tags
   }
 
   private findNode(parent: any, name: string): any {

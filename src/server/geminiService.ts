@@ -11,6 +11,7 @@ export function getGeminiClient(): GoogleGenAI {
     aiClient = new GoogleGenAI({
       apiKey: key,
       httpOptions: {
+        timeout: 60000, // 60 segundos para procesar temarios complejos de 7 unidades
         headers: {
           'User-Agent': 'aistudio-build',
         }

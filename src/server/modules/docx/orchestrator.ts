@@ -121,7 +121,7 @@ export class DocxAgentOrchestrator {
         
         // FASE INTERMEDIA: Enriquecimiento de recursos didácticos
         console.log('[DocxAgentOrchestrator] Enriqueciendo sesiones con DidacticResourceAgent...');
-        sesiones = await this.didacticResourceAgent.enrichSessions(sesiones);
+        sesiones = await this.didacticResourceAgent.enrichSessions(sesiones, snapshot.syllabusText);
         
         // Sincronizar sesiones enriquecidas de vuelta al payload
         docxPayload.sessions = sesiones;

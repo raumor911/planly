@@ -27,6 +27,12 @@ export class InsertionAgent {
   public sanitizeTagSplitting(xml: string): string {
     let cleaned = xml;
     
+    // 0. ELIMINACIÓN DE RUIDO: Quitar etiquetas de corrección ortográfica y gramatical
+    // Estas son las principales culpables de romper {{ tags }} en Word
+    cleaned = cleaned.replace(/<w:proofErr[^>]*\/>/g, '');
+    cleaned = cleaned.replace(/<w:noProof[^>]*\/>/g, '');
+    cleaned = cleaned.replace(/<w:lang[^>]*\/>/g, '');
+    
     const applyReplacement = (pattern: RegExp, replacement: string): void => {
       cleaned = cleaned.replace(pattern, replacement);
     };
@@ -182,8 +188,11 @@ export class InsertionAgent {
       : payload;
 
     const sesiones = docxPayload.sessions || [];
+    
+    // SANEAMIENTO INICIAL: Eliminar Tag Splitting de Word en todo el documento
+    xml = this.sanitizeTagSplitting(xml);
 
-    // SANEAMIENTO: Elimina etiquetas de formato dentro de los {{ placeholders }}
+    // SANEAMIENTO ADICIONAL: Eliminar etiquetas de formato residuales dentro de los {{ placeholders }}
     xml = xml.replace(/\{\{([\s\S]*?)\}\}/g, (match, content) => {
         const clean = content.replace(/<\/?w:[a-z]+[^>]*>/g, "").replace(/\s+/g, "");
         return `{{${clean}}}`;
@@ -217,7 +226,13 @@ export class InsertionAgent {
               resources: this.resolveCellValue(session, 'resources'),
               RECURSOS: this.resolveCellValue(session, 'RECURSOS'),
               RECURSOS_DIDACTICOS: this.resolveCellValue(session, 'RECURSOS'),
-              DIDACTIC_RESOURCES: this.resolveCellValue(session, 'RECURSOS')
+              DIDACTIC_RESOURCES: this.resolveCellValue(session, 'RECURSOS'),
+              ACTIVIDADES_Y_ESTRATEGIAS: this.resolveCellValue(session, 'activity'),
+              RECURSOS_POR_ACTIVIDAD: session.activities && session.activities.length > 0
+                  ? session.activities.map(
+                      (a: any) => `${a.description}: ${a.resources && a.resources.length > 0 ? a.resources.join(', ') : 'Recursos generales'}`
+                  ).join('\n')
+                  : "Material de clase, Proyector y Pizarrón"
           };
 
           for (const [key, val] of Object.entries(replacements)) {

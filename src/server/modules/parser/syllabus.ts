@@ -65,30 +65,33 @@ export class SyllabusParser {
     // PRE-SANITIZER: Limpieza profunda y normalización de texto crudo
     const sanitizedText = PreSanitizer.sanitize(text);
 
-    // DETECCIÓN PROACTIVA DE UNIDADES (Regex flexible para UNIDAD o MÓDULO)
-    const unitRegex = /(?:UNIDAD|MÓDULO)\s*\d*[\s\S]*?(?=(?:(?:UNIDAD|MÓDULO)\s*\d*)|$)/gi;
-    const matches = sanitizedText.match(unitRegex) || [];
-    const numUnitsDetected = matches.length;
-    
-    console.log(`[SYLLABUS] Pre-parsing detection: ${numUnitsDetected} blocks found (UNIDAD/MÓDULO).`);
+    // PASO 1: EXTRACCIÓN DE SECCIONES CRÍTICAS (Two-Pass Parsing)
+    // Buscamos las secciones mediante palabras clave para alimentar el "Conector" de IA
+    const sectionKeywords = [
+      "CONTENIDO TEMÁTICO", "TEMARIO", "UNIDADES", 
+      "ACTIVIDADES DE APRENDIZAJE", "ESTRATEGIAS", 
+      "CRITERIOS DE EVALUACIÓN", "EVALUACIÓN"
+    ];
 
-    const instructions = `Actúa como un clasificador curricular universitario riguroso. Tu objetivo es realizar un análisis taxonómico infalible del temario académico proporcionado.
+    const instructions = `Actúa como un estratega curricular y conector lógico. Tu objetivo es realizar un análisis taxonómico y relacional del temario académico.
+    
+    ESTRATEGIA DE MAPEO (TWO-PASS PARSING):
+    1. Identifica la lista de temas en la sección "CONTENIDO TEMÁTICO".
+    2. Identifica la lista de acciones pedagógicas en la sección "ACTIVIDADES DE APRENDIZAJE".
+    3. RELACIÓN LÓGICA: Debes mapear cada actividad con el tema correspondiente. No las listes de forma aislada.
     
     INSTRUCCIONES DE PROCESAMIENTO:
-    - REGLA DE CANTIDAD ESTRICTA: Debes generar EXACTAMENTE ${numWeeks} sesiones. Ni una más, ni una menos.
-    - REGLA DE COBERTURA TOTAL: He detectado ${numUnitsDetected} unidades en el documento. NO omitas ninguna. Si el temario tiene ${numUnitsDetected} unidades y debes generar ${numWeeks} sesiones, distribúyelas equitativamente.
-    - DETECCIÓN ROBUSTA DE UNIDADES: Utiliza un iterador mental basado en el índice de aparición de la palabra "UNIDAD". Captura todo el contenido hasta la siguiente "UNIDAD" o el final del documento. No te detengas prematuramente.
+    - REGLA DE CANTIDAD ESTRICTA: Debes generar EXACTAMENTE ${numWeeks} sesiones.
+    - REGLA DE COBERTURA TOTAL: No omitas ninguna unidad. Si hay 7 unidades, las 7 deben estar en el JSON distribuidas en las ${numWeeks} sesiones.
     
-    - CLASIFICACIÓN DE ACTIVIDADES Y RECURSOS: 
-      * 'activities': Lista de objetos. Cada objeto DEBE tener contenido real.
-      * 'description': Qué hará el alumno (ej. "Mapa mental sobre el sistema de contabilidad").
-      * 'strategy': Cómo lo hará (ej. "Aprendizaje basado en problemas", "Análisis de casos").
-      * 'resources': HERRAMIENTAS necesarias para esa actividad (ej. "Miro", "Excel", "Calculadora financiera"). NO repitas aquí la descripción de la actividad.
-    
-    - EXTRACCIÓN DE EVALUACIÓN: Busca específicamente la sección de "Criterios de Evaluación" o "Evaluación" (normalmente al final). Extrae la tabla de actividades (ej. "Examen", "Tríptico", "Manual") y sus porcentajes.
+    - CLASIFICACIÓN RELACIONAL: 
+      * 'activities': Lista de objetos vinculados AL TEMA de la sesión.
+      * 'description': La acción específica (ej. "Análisis de la Ley de Contabilidad").
+      * 'strategy': El método (ej. "Investigación documental").
+      * 'resources': Herramientas necesarias.
     
     ESPECIFICACIONES DEL FORMATO:
-    - REGLA DE OBJETIVOS ESPECÍFICOS: El campo 'objective' de cada sesión DEBE ser un objetivo particular y único, redactado por ti basándote EXCLUSIVAMENTE en los temas y subtemas de esa sesión. Queda PROHIBIDO repetir el objetivo general del curso o usar el mismo objetivo en varias sesiones. Cada sesión debe tener su propia meta de aprendizaje específica.
+    - REGLA DE OBJETIVOS ESPECÍFICOS: El campo 'objective' de cada sesión DEBE ser un objetivo particular y único basado en el tema de esa sesión.
     - REGLA DE INTEGRIDAD: No omitas unidades. Es preferible que una unidad ocupe múltiples sesiones a que sea ignorada.
     `;
 
