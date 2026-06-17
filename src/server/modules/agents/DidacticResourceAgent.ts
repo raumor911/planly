@@ -94,7 +94,7 @@ export class DidacticResourceAgent {
    * Consulta a la IA para sugerir recursos basados en el tema y el contexto original.
    */
   private async suggestResources(topic: string, originalText?: string): Promise<string[]> {
-    if (!topic || topic.trim().length < 3) return [];
+    if (!topic || topic.trim().length < 3) return ["Pizarrón", "Proyector", "Material de lectura"];
 
     const prompt = `Actúa como un estratega instruccional experto.
     
@@ -102,7 +102,7 @@ export class DidacticResourceAgent {
     
     REGLAS:
     1. Si en el contexto proporcionado "${originalText ? originalText.substring(0, 1500) : 'N/A'}" ya se mencionan recursos, prioriza y formaliza esos.
-    2. Si no hay recursos en el contexto, sugiere 3 recursos innovadores (ej. plataformas interactivas, tipo de ejercicio práctico, herramienta de visualización o repositorio académico).
+    2. Si no hay recursos en el contexto, sugiere 3 recursos innovadores y prácticos (ej. "Simulador de estados financieros", "Software de auditoría", "Caso de estudio de la SHCP", "Plataforma Kahoot para evaluación rápida").
     3. Asegura que cada recurso tenga una relación directa y lógica con la naturaleza del tema.
     4. Respuesta: Devuelve exclusivamente un JSON con este formato: {"resources": ["recurso1", "recurso2", "recurso3"]}. No añadas explicaciones adicionales.
     

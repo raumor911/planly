@@ -1,5 +1,6 @@
 import { Type, Schema } from "@google/genai";
 import { callGeminiWithRetry } from "../../geminiService";
+import { PreSanitizer } from "../docx/test-sanitizer";
 
 export interface SyllabusCourse {
   name: string;
@@ -61,22 +62,35 @@ export class SyllabusParser {
    * La firma se mantiene como Promise<any> por requerimiento técnico.
    */
   public async parse(text: string, numWeeks: number = 14): Promise<any> {
+    // PRE-SANITIZER: Limpieza profunda y normalización de texto crudo
+    const sanitizedText = PreSanitizer.sanitize(text);
+
+    // DETECCIÓN PROACTIVA DE UNIDADES (Regex flexible para UNIDAD o MÓDULO)
+    const unitRegex = /(?:UNIDAD|MÓDULO)\s*\d*[\s\S]*?(?=(?:(?:UNIDAD|MÓDULO)\s*\d*)|$)/gi;
+    const matches = sanitizedText.match(unitRegex) || [];
+    const numUnitsDetected = matches.length;
+    
+    console.log(`[SYLLABUS] Pre-parsing detection: ${numUnitsDetected} blocks found (UNIDAD/MÓDULO).`);
+
     const instructions = `Actúa como un clasificador curricular universitario riguroso. Tu objetivo es realizar un análisis taxonómico infalible del temario académico proporcionado.
     
     INSTRUCCIONES DE PROCESAMIENTO:
-    - Divide el contenido en exactamente ${numWeeks} sesiones/semanas. 
-    - No agrupes todo en una sola sesión. Distribuye los temas de forma lógica a lo largo de las ${numWeeks} sesiones.
-    - Normaliza acentos, mayúsculas y espacios para identificar variaciones de cabeceras equivalentes a: DENOMINACIÓN DE LA ASIGNATURA, FINES DEL APRENDIZAJE, CONTENIDO TEMÁTICO, ACTIVIDADES DE APRENDIZAJE y CRITERIOS DE EVALUACIÓN.
+    - REGLA DE CANTIDAD ESTRICTA: Debes generar EXACTAMENTE ${numWeeks} sesiones. Ni una más, ni una menos.
+    - REGLA DE COBERTURA TOTAL: He detectado ${numUnitsDetected} unidades en el documento. NO omitas ninguna. Si el temario tiene ${numUnitsDetected} unidades y debes generar ${numWeeks} sesiones, distribúyelas equitativamente.
+    - DETECCIÓN ROBUSTA DE UNIDADES: Utiliza un iterador mental basado en el índice de aparición de la palabra "UNIDAD". Captura todo el contenido hasta la siguiente "UNIDAD" o el final del documento. No te detengas prematuramente.
     
-    REGLAS DE EXCLUSIÓN SEMÁNTICA:
-    - REGLA DE EXCLUSIÓN DE TEMAS: Un tema principal válido solo existe si está bajo la sección temática, posee numeración entera o subtemas asociados (ej. 1.1, 1.2). Queda estrictamente PROHIBIDO clasificar actividades, tareas, evidencias, porcentajes, recursos o libros de bibliografía como parte de los 'topics'.
-    - REGLA DE OBJETIVOS ESPECÍFICOS: El campo 'objective' de cada sesión DEBE ser un objetivo particular y único, redactado por ti basándote EXCLUSIVAMENTE en los temas y subtemas de esa sesión. Queda PROHIBIDO repetir el objetivo general del curso o usar el mismo objetivo en varias sesiones. Cada sesión debe tener su propia meta de aprendizaje específica.
-    - REGLA DE RUIDO ESTRUCTURAL: Si aparece una numeración aislada sin título asociado (ej. "2.", "4.", "8."), debe ignorarse por completo. No crees temas vacíos.
-    - CLASIFICACIÓN DE ACTIVIDADES: Todo lo que describa diseños de trípticos, mapas sinópticos o análisis de casos debe ser aislado dentro del arreglo 'activities' de cada sesión. Identifica la descripción de la actividad y la estrategia pedagógica asociada. Si el temario menciona recursos específicos para esa actividad, inclúyelos en el array 'resources' de la actividad.
+    - CLASIFICACIÓN DE ACTIVIDADES Y RECURSOS: 
+      * 'activities': Lista de objetos. Cada objeto DEBE tener contenido real.
+      * 'description': Qué hará el alumno (ej. "Mapa mental sobre el sistema de contabilidad").
+      * 'strategy': Cómo lo hará (ej. "Aprendizaje basado en problemas", "Análisis de casos").
+      * 'resources': HERRAMIENTAS necesarias para esa actividad (ej. "Miro", "Excel", "Calculadora financiera"). NO repitas aquí la descripción de la actividad.
+    
+    - EXTRACCIÓN DE EVALUACIÓN: Busca específicamente la sección de "Criterios de Evaluación" o "Evaluación" (normalmente al final). Extrae la tabla de actividades (ej. "Examen", "Tríptico", "Manual") y sus porcentajes.
     
     ESPECIFICACIONES DEL FORMATO:
-    - Genera una estructura JSON limpia y validable con exactamente ${numWeeks} elementos en el array 'sessions'.
-    - Si detectas ambigüedades o los porcentajes de evaluación no suman 100%, deposita una alerta descriptiva en el campo 'warnings'.`;
+    - REGLA DE OBJETIVOS ESPECÍFICOS: El campo 'objective' de cada sesión DEBE ser un objetivo particular y único, redactado por ti basándote EXCLUSIVAMENTE en los temas y subtemas de esa sesión. Queda PROHIBIDO repetir el objetivo general del curso o usar el mismo objetivo en varias sesiones. Cada sesión debe tener su propia meta de aprendizaje específica.
+    - REGLA DE INTEGRIDAD: No omitas unidades. Es preferible que una unidad ocupe múltiples sesiones a que sea ignorada.
+    `;
 
     const responseSchema: Schema = {
       type: Type.OBJECT,
@@ -183,5 +197,50 @@ export class SyllabusParser {
     console.log(`[SYLLABUS] Warnings: ${JSON.stringify(resultJson.warnings)}`);
 
     return resultJson;
+  }
+
+  /**
+   * Extrae específicamente los criterios de evaluación del temario.
+   */
+  public async extractEvaluation(text: string): Promise<any[]> {
+    const prompt = `Actúa como un analista de currículo. Tu tarea es extraer EXCLUSIVAMENTE los criterios de evaluación y sus porcentajes del siguiente temario académico.
+    
+    Busca tablas o listas con porcentajes (ej. "Asistencia 10%", "Examen 40%", etc.).
+    
+    Formato de salida esperado (JSON):
+    {
+      "evaluation": [
+        { "activity": "Nombre de la actividad", "percentage": 10 }
+      ]
+    }
+    
+    Temario:
+    ${text}`;
+
+    const responseSchema: Schema = {
+      type: Type.OBJECT,
+      properties: {
+        evaluation: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              activity: { type: Type.STRING },
+              percentage: { type: Type.INTEGER }
+            },
+            required: ["activity", "percentage"]
+          }
+        }
+      },
+      required: ["evaluation"]
+    };
+
+    const result = await callGeminiWithRetry(prompt, {
+      responseMimeType: "application/json",
+      responseSchema: responseSchema
+    });
+
+    const resultJson = JSON.parse(result.text);
+    return resultJson.evaluation || [];
   }
 }

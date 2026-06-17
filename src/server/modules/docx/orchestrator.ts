@@ -9,6 +9,7 @@ import {
 import { PreservationEngine } from './engine';
 import { InsertionAgent } from '../agents/InsertionAgent';
 import { DidacticResourceAgent } from '../agents/DidacticResourceAgent';
+import { SyllabusParser } from '../parser/syllabus';
 import { ValidationEngine } from '../validation/validator';
 import { TemplateScanner } from './TemplateScanner';
 import { askAgentToHealXML, askAgentToInspectXML } from '../../geminiService';
@@ -21,12 +22,14 @@ export class DocxAgentOrchestrator {
   private preservationEngine: PreservationEngine;
   private insertionAgent: InsertionAgent;
   private didacticResourceAgent: DidacticResourceAgent;
+  private syllabusParser: SyllabusParser;
   private validationEngine: ValidationEngine;
 
   constructor() {
     this.preservationEngine = new PreservationEngine();
     this.insertionAgent = new InsertionAgent();
     this.didacticResourceAgent = new DidacticResourceAgent();
+    this.syllabusParser = new SyllabusParser();
     this.validationEngine = new ValidationEngine();
   }
 
@@ -90,6 +93,24 @@ export class DocxAgentOrchestrator {
     const templateBuffer = Buffer.from(snapshot.templateBase64, 'base64');
     const preservedBuffer = await this.preservationEngine.preserve(templateBuffer);
 
+    // EXTRACCIÓN EXTRA DE EVALUACIÓN (Gap 2)
+    if (snapshot.syllabusText) {
+      console.log('[DocxAgentOrchestrator] Extrayendo criterios de evaluación adicionales...');
+      const extraEvaluation = await this.syllabusParser.extractEvaluation(snapshot.syllabusText);
+      if (extraEvaluation && extraEvaluation.length > 0) {
+        snapshot.payload.evaluation.rawCriteria = extraEvaluation.map(e => ({
+          name: e.activity,
+          percentage: e.percentage
+        }));
+        
+        // Gap 2.1: Preparar string consolidado para el tag {{EVALUACION}}
+        const consolidatedCriteria = extraEvaluation
+          .map(e => `${e.activity}: ${e.percentage}%`)
+          .join('\n');
+        (snapshot.payload as any).evaluationCriteriaText = consolidatedCriteria;
+      }
+    }
+
     while (memory.attempt <= memory.maxAttempts) {
       console.log(`[DocxAgentOrchestrator] --- Execution Cycle ${memory.attempt}/${memory.maxAttempts} ---`);
       
@@ -101,6 +122,9 @@ export class DocxAgentOrchestrator {
         // FASE INTERMEDIA: Enriquecimiento de recursos didácticos
         console.log('[DocxAgentOrchestrator] Enriqueciendo sesiones con DidacticResourceAgent...');
         sesiones = await this.didacticResourceAgent.enrichSessions(sesiones);
+        
+        // Sincronizar sesiones enriquecidas de vuelta al payload
+        docxPayload.sessions = sesiones;
         
         console.log(`[DocxAgentOrchestrator] Preparando inyección para materia: ${docxPayload.course?.name}`);
         console.log(`[DocxAgentOrchestrator] Sesiones detectadas: ${sesiones.length || 0}`);
@@ -118,7 +142,7 @@ export class DocxAgentOrchestrator {
         console.log(`[DocxAgentOrchestrator] Modo de inyección detectado: ${mapping.mode}`);
 
         // El agente ahora es universal: recibe las sesiones y el mapeo
-        const resultBuffer = this.insertionAgent.compile(preservedBuffer, sesiones, mapping);
+        const resultBuffer = this.insertionAgent.compile(preservedBuffer, docxPayload, mapping);
         
         // Recargamos el ZIP para validación
         const zip = new PizZip(resultBuffer);

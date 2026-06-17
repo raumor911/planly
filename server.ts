@@ -246,7 +246,10 @@ app.post("/api/curricula/generate", async (req, res) => {
     let generalObjective = "Analizar y aplicar los principios de contabilidad gubernamental...";
     let courseCode = "N/A";
 
-    if (hasManualOverride) {
+    let evaluationCriteria: any[] = [];
+
+    if (sesionesOverride) {
+      // Logic for manual edit overrides (already structured)
       sessions = sesionesOverride;
       cleanSubject = materiaOverride || "Contabilidad de Organizaciones Públicas";
       // Si hay override manual, intentamos recuperar el objetivo y clave si se enviaron (opcional)
@@ -255,6 +258,7 @@ app.post("/api/curricula/generate", async (req, res) => {
     } else {
       // 1. Structure raw text with the new taxonomic SyllabusParser
       const parsedData = await syllabusParser.parse(temario, sessionsCount);
+      evaluationCriteria = parsedData.evaluation;
 
       // Map structured sessions to DocxPayload
       sessions = parsedData.sessions.map((s: any, idx: number) => ({
@@ -296,7 +300,8 @@ app.post("/api/curricula/generate", async (req, res) => {
       evaluation: {
         firstPartial: { period: "1er Parcial", items: [{ name: "Examen", percentage: parseInt(examenPct) || 30 }] },
         secondPartial: { period: "2do Parcial", items: [{ name: "Continua", percentage: parseInt(continuaPct) || 40 }] },
-        final: { period: "Final", items: [{ name: "Proyecto", percentage: parseInt(plataformaPct) || 30 }] }
+        final: { period: "Final", items: [{ name: "Proyecto", percentage: parseInt(plataformaPct) || 30 }] },
+        rawCriteria: evaluationCriteria.map((e: any) => ({ name: e.activity, percentage: e.percentage }))
       },
       professor,
       period,
@@ -332,7 +337,8 @@ app.post("/api/curricula/generate", async (req, res) => {
     // Invocamos el bucle agéntico de generación y sanación a través del orquestador
     const buffer = await docxOrchestrator.runSafeGeneration({
       templateBase64,
-      payload: docxPayload
+      payload: docxPayload,
+      syllabusText: temario // Gap 2: Pasar temario para extracción extra
     });
  
     // 4. Transmisión limpia del flujo resultante directo al navegador 

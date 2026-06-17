@@ -95,20 +95,26 @@ export class InsertionAgent {
       case 'content':
         return session.content || '';
       case 'activity':
+      case 'actividad':
+      case 'ACTIVIDADES':
         if (session.activities && session.activities.length > 0) {
+          // SEPARACIÓN ESTRICTA: Solo descripción y estrategia
           return session.activities.map((a, i) => `${session.activities!.length > 1 ? (i + 1) + '. ' : ''}${a.description}${a.strategy ? ' (' + a.strategy + ')' : ''}`).join('\n');
         }
         return session.activity || session.strategy || '';
       case 'resources':
-        if (session.activities && session.activities.length > 0) {
-          return session.activities.map((a, i) => `${session.activities!.length > 1 ? (i + 1) + '. ' : ''}${a.resources.join(', ')}`).join('\n');
-        }
-        return session.resources || (session.didacticResources ? session.didacticResources.join('\n') : '');
+      case 'recursos':
+      case 'RECURSOS':
       case 'didacticResources':
-        if (session.activities && session.activities.length > 0) {
-          return session.activities.map((a, i) => `${session.activities!.length > 1 ? (i + 1) + '. ' : ''}${a.resources.join(', ')}`).join('\n');
+        // SEPARACIÓN ESTRICTA: Solo HERRAMIENTAS
+        if (session.didacticResources && session.didacticResources.length > 0) {
+          return Array.from(new Set(session.didacticResources)).join(', ');
         }
-        return session.didacticResources ? session.didacticResources.join('\n') : (session.resources || '');
+        if (session.activities && session.activities.length > 0) {
+          const tools = session.activities.flatMap(a => a.resources || []);
+          if (tools.length > 0) return Array.from(new Set(tools)).join(', ');
+        }
+        return session.resources || '';
       case 'evidence':
         return session.evidence || '';
       case 'evaluation':
@@ -155,14 +161,29 @@ export class InsertionAgent {
    */
   public compile(
     templateBuffer: Buffer, 
-    syllabus: any[], 
+    payload: any, 
     mapping: { mode: 'A' | 'B' | 'C', columns?: Record<number, string> } = { mode: 'A' }
   ): Buffer {
     const zip = new PizZip(templateBuffer);
     let xml = zip.file("word/document.xml")?.asText() || "";
 
+    // Normalización defensiva del payload
+    const docxPayload: DocxPayload = Array.isArray(payload) 
+      ? { 
+          sessions: payload, 
+          course: { name: '', code: '', generalObjective: '' }, 
+          bibliography: [], 
+          evaluation: { 
+            firstPartial: { period: '', items: [] }, 
+            secondPartial: { period: '', items: [] }, 
+            final: { period: '', items: [] } 
+          } 
+        }
+      : payload;
+
+    const sesiones = docxPayload.sessions || [];
+
     // SANEAMIENTO: Elimina etiquetas de formato dentro de los {{ placeholders }}
-    // Esto hace que {{ t e m a }} se convierta en {{tema}} para el regex
     xml = xml.replace(/\{\{([\s\S]*?)\}\}/g, (match, content) => {
         const clean = content.replace(/<\/?w:[a-z]+[^>]*>/g, "").replace(/\s+/g, "");
         return `{{${clean}}}`;
@@ -174,29 +195,29 @@ export class InsertionAgent {
       
       if (!rowMatch) {
           console.error("[InsertionAgent] CRÍTICO: No se encontró la fila con {{tema}}.");
-          // Si no hay fila molde, intentamos inyectar placeholders simples al menos
-          return this.legacyCompile(templateBuffer, syllabus);
+          return this.legacyCompile(templateBuffer, docxPayload);
       }
 
       const rowTemplate = rowMatch[1];
       let generatedRowsXml = "";
 
       // Generación de filas
-      for (const session of syllabus) {
+      for (const session of sesiones) {
           let row = rowTemplate;
           const replacements = {
               num: session.num || "",
-              tema: session.topic || session.tema || "",
-              topic: session.topic || session.tema || "",
+              tema: session.topic || (session as any).tema || "",
+              topic: session.topic || (session as any).tema || "",
               actividad: this.resolveCellValue(session, 'activity'),
               activity: this.resolveCellValue(session, 'activity'),
-              objetivo: session.objective || session.objetivo || "",
-              objective: session.objective || session.objetivo || "",
+              ACTIVIDADES: this.resolveCellValue(session, 'ACTIVIDADES'),
+              objetivo: session.objective || (session as any).objetivo || "",
+              objective: session.objective || (session as any).objetivo || "",
               recursos: this.resolveCellValue(session, 'resources'),
               resources: this.resolveCellValue(session, 'resources'),
-              RECURSOS: this.resolveCellValue(session, 'didacticResources'),
-              RECURSOS_DIDACTICOS: this.resolveCellValue(session, 'didacticResources'),
-              DIDACTIC_RESOURCES: this.resolveCellValue(session, 'didacticResources')
+              RECURSOS: this.resolveCellValue(session, 'RECURSOS'),
+              RECURSOS_DIDACTICOS: this.resolveCellValue(session, 'RECURSOS'),
+              DIDACTIC_RESOURCES: this.resolveCellValue(session, 'RECURSOS')
           };
 
           for (const [key, val] of Object.entries(replacements)) {
@@ -208,16 +229,16 @@ export class InsertionAgent {
       xml = xml.replace(rowTemplate, () => generatedRowsXml);
       
       // Inyectar placeholders de curso (fuera de la tabla)
-      const courseInfo = (syllabus as any).course || {};
+      const courseInfo = (docxPayload.course || {}) as any;
       const courseReplacements: Record<string, string> = {
         'NOMBRE_ASIGNATURA': courseInfo.name || "",
         'OBJETIVO_GENERAL': courseInfo.generalObjective || "",
         'CLAVE': courseInfo.code || "",
-        'TOTAL_SESIONES': String(syllabus.length),
-        'SESIONES_TOTALES': String(syllabus.length),
-        'SESIONES_POR_CUATRIMESTRE': String(syllabus.length),
-        'SESIONES_POR_SEMESTRE': String(syllabus.length),
-        'SESIONES_POR_CICLO': String(syllabus.length),
+        'TOTAL_SESIONES': String(sesiones.length),
+        'SESIONES_TOTALES': String(sesiones.length),
+        'SESIONES_POR_CUATRIMESTRE': String(sesiones.length),
+        'SESIONES_POR_SEMESTRE': String(sesiones.length),
+        'SESIONES_POR_CICLO': String(sesiones.length),
       };
 
       for (const [key, val] of Object.entries(courseReplacements)) {
@@ -228,7 +249,7 @@ export class InsertionAgent {
       return zip.generate({ type: "nodebuffer", compression: "DEFLATE" });
     } else {
       // MODO B/C: Usar lógica de mapeo semántico (Legacy/Mejorado)
-      return this.legacyCompile(templateBuffer, syllabus, mapping);
+      return this.legacyCompile(templateBuffer, docxPayload, mapping);
     }
   }
 
@@ -353,6 +374,8 @@ export class InsertionAgent {
       '{{SESIONES_POR_CUATRIMESTRE}}': String(payload.sessions.length),
       '{{SESIONES_POR_SEMESTRE}}': String(payload.sessions.length),
       '{{SESIONES_POR_CICLO}}': String(payload.sessions.length),
+      '{{EVALUACION}}': (payload as any).evaluationCriteriaText || '',
+      '{{CRITERIOS_EVALUACION}}': (payload as any).evaluationCriteriaText || '',
     };
 
     for (const [token, value] of Object.entries(tokens)) {
@@ -432,21 +455,41 @@ export class InsertionAgent {
           return clonedRow;
         });
       } else if (match.type === 'evaluation') {
-        const evaluation = payload.evaluation || {};
-        const evalItems = [
-          ...(evaluation.firstPartial?.items || []),
-          ...(evaluation.secondPartial?.items || []),
-          ...(evaluation.final?.items || []),
-        ];
+        const evaluation = (payload.evaluation || {}) as any;
+        // Priorizar criterios extraídos directamente del temario (rawCriteria)
+        const evalItems = (evaluation.rawCriteria && evaluation.rawCriteria.length > 0)
+          ? evaluation.rawCriteria
+          : [
+              ...(evaluation.firstPartial?.items || []),
+              ...(evaluation.secondPartial?.items || []),
+              ...(evaluation.final?.items || []),
+            ];
+            
         newRows = evalItems.map(item => {
           const clonedRow = JSON.parse(JSON.stringify(prototypeRow));
-          this.fillRowWithSessionData(clonedRow, { tema: item.name, actividad: `${item.percentage}%` } as any, match.roles);
+          this.fillRowWithEvaluationData(clonedRow, item, match.roles);
           return clonedRow;
         });
       }
 
       if (newRows.length > 0) {
         this.replaceRowsInTable(targetTable, match.headerRowIndex, newRows);
+      }
+    });
+  }
+
+  /**
+   * Mapea criterios de evaluación dinámicos a la tabla
+   */
+  private fillRowWithEvaluationData(row: any, item: any, roles: any): void {
+    const cells = this.findAllNodes(row, 'w:tc');
+    cells.forEach((cell, cIdx) => {
+      const role = roles[cIdx];
+      
+      if (role === 'activity' || role === 'tema' || role === 'actividad') {
+        this.setCellText(cell, this.normalizeDocxText(item.name || ''));
+      } else if (role === 'evaluation' || role === 'percentage' || role === 'porcentaje') {
+        this.setCellText(cell, this.normalizeDocxText(`${item.percentage}%`));
       }
     });
   }

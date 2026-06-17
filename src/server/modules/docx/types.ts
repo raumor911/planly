@@ -41,6 +41,7 @@ export interface DocxEvaluation {
   firstPartial: EvaluationPeriod;
   secondPartial: EvaluationPeriod;
   final: EvaluationPeriod;
+  rawCriteria?: EvaluationItem[]; // Para criterios extraídos directamente del temario
 }
 
 export interface BibliographyItem {
@@ -84,6 +85,7 @@ export interface TableMatch {
 export interface GenerationSnapshot {
   templateBase64: string;
   payload: DocxPayload;
+  syllabusText?: string; // Texto crudo del temario para extracciones extra
   templateMeta?: {
     fileName?: string;
     fileSize?: number;
